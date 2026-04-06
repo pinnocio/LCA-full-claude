@@ -1,0 +1,305 @@
+---
+title: "Module 9: Validation"
+subtitle: "LCA for Social Science Research"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    number_sections: true
+    theme: readable
+    highlight: tango
+    code_folding: show
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE, warning = FALSE, message = FALSE,
+  fig.width = 8, fig.height = 5, fig.align = "center"
+)
+```
+
+# Purpose of This Module
+
+Identifying latent classes and labeling them is not the endpoint of a rigorous LCA study. Without validation, the classes may be statistical artifacts — products of sampling variability, model misspecification, or noise in the data. Validation establishes that the typology has real implications for theory or practice, that the classes relate to the world in expected ways, and that the same structure would emerge if the study were repeated.
+
+This module covers two forms of validation: construct validity and external validity. Both are required for a publishable LCA study.
+
+> **Prerequisites:** This module loads objects from Modules 4, 6, 7, and 8. Render those modules first.
+
+```{r load}
+load("lca_prepared_data.RData")
+load("lca_selected_model.RData")
+load("lca_diagnostics.RData")
+load("lca_interpretation.RData")
+library(poLCA)
+library(tidyverse)
+library(knitr)
+library(kableExtra)
+```
+
+---
+
+# Construct Validity
+
+## The Logic
+
+Construct validity asks: do the identified classes behave the way your theory predicts they should? Specifically, do the classes exhibit theoretically expected relationships with variables that were *not* included in the original class formation?
+
+The reasoning is straightforward. If your classes genuinely capture meaningful population subgroups, then those subgroups should differ in predictable ways on external characteristics. If a class labeled "progressive" does not differ from other classes on voting behavior, political participation, or media consumption, either the label is wrong or the class is not capturing a genuine subgroup.
+
+Construct validity is established by testing associations between class membership and external variables — variables not used as indicators in the LCA.
+
+## Types of External Variables
+
+External variables for construct validation typically fall into three categories:
+
+1. **Sociodemographic characteristics:** Age, gender, education, income, ethnicity, religion, region. These test whether the composition of the classes matches theoretical expectations (e.g., "the progressive class should contain a higher proportion of younger, more educated respondents").
+
+2. **Behavioral variables:** Voting behavior, political participation, media consumption, organizational membership, protest activity. These test whether class membership predicts relevant behaviors.
+
+3. **Attitudinal variables not used as indicators:** Attitudes that are conceptually related to your latent construct but were not included in the LCA. If your indicators measured attitudes toward redistribution and immigration, you might validate against attitudes toward healthcare policy or criminal justice.
+
+## Implementation
+
+The simplest approach to construct validation uses the modal class assignment and standard statistical tests (chi-square, ANOVA, or logistic regression). This is a classify-analyze approach and is subject to the biases discussed in Module 7. For exploratory validation, it is acceptable if entropy is high. For confirmatory validation, the three-step approach (Module 10) is preferred.
+
+```{r construct-validation}
+sim_data$assigned_class <- factor(diagnostics$assigned_class)
+
+cat("=== CONSTRUCT VALIDATION: SOCIODEMOGRAPHIC DIFFERENCES ===\n\n")
+```
+
+### Age Differences
+
+```{r age-validation}
+# Descriptive: mean age by class
+age_summary <- sim_data %>%
+  group_by(assigned_class) %>%
+  summarise(
+    n = n(),
+    mean_age = mean(age),
+    sd_age = sd(age),
+    median_age = median(age),
+    .groups = "drop"
+  )
+
+kable(age_summary, digits = 1,
+      caption = "Age Distribution by Latent Class") %>%
+  kable_styling(full_width = FALSE)
+
+# Statistical test: one-way ANOVA
+anova_age <- aov(age ~ assigned_class, data = sim_data)
+anova_summary <- summary(anova_age)
+f_val <- anova_summary[[1]]["assigned_class", "F value"]
+p_val <- anova_summary[[1]]["assigned_class", "Pr(>F)"]
+
+cat(sprintf("One-way ANOVA: F(%d, %d) = %.2f, p = %.4f\n",
+            anova_summary[[1]]["assigned_class", "Df"],
+            anova_summary[[1]]["Residuals", "Df"],
+            f_val, p_val))
+
+if (p_val < 0.05) {
+  cat("Classes differ significantly in age.\n")
+  # Post-hoc pairwise comparisons
+  tukey <- TukeyHSD(anova_age)
+  cat("\nPairwise comparisons (Tukey HSD):\n")
+  print(round(tukey$assigned_class, 3))
+} else {
+  cat("No significant age differences between classes.\n")
+}
+```
+
+### Gender Differences
+
+```{r gender-validation}
+gender_table <- table(sim_data$assigned_class, sim_data$female)
+colnames(gender_table) <- c("Male", "Female")
+
+# Proportions
+gender_prop <- prop.table(gender_table, margin = 1)
+
+kable(round(gender_prop * 100, 1),
+      caption = "Gender Composition by Class (%)") %>%
+  kable_styling(full_width = FALSE)
+
+# Chi-square test
+chi_gender <- chisq.test(gender_table)
+cat(sprintf("Chi-square test: X²(%d) = %.2f, p = %.4f\n",
+            chi_gender$parameter, chi_gender$statistic, chi_gender$p.value))
+```
+
+### Education Differences
+
+```{r edu-validation}
+edu_table <- table(sim_data$assigned_class, sim_data$education)
+colnames(edu_table) <- c("Secondary", "Post-secondary", "University")
+
+edu_prop <- prop.table(edu_table, margin = 1)
+
+kable(round(edu_prop * 100, 1),
+      caption = "Education Composition by Class (%)") %>%
+  kable_styling(full_width = FALSE)
+
+chi_edu <- chisq.test(edu_table)
+cat(sprintf("Chi-square test: X²(%d) = %.2f, p = %.4f\n",
+            chi_edu$parameter, chi_edu$statistic, chi_edu$p.value))
+```
+
+### Comparison with True Classes (Simulation Only)
+
+Because we are working with simulated data, we have the luxury of comparing the estimated classes against the true data-generating classes. This comparison is not available in real research but is invaluable for learning.
+
+```{r true-comparison}
+cross_tab <- table(
+  Estimated = sim_data$assigned_class,
+  True = factor(sim_data$true_class, labels = true_labels)
+)
+
+kable(cross_tab, 
+      caption = "Cross-Tabulation: Estimated vs. True Class Membership") %>%
+  kable_styling(full_width = FALSE)
+
+# Classification accuracy (requires matching classes — label switching may occur)
+cat("\nNote: Estimated class numbers may not correspond to true class numbers\n")
+cat("due to label switching. Match by examining which estimated class\n")
+cat("best corresponds to each true class based on the cell frequencies above.\n")
+```
+
+## Interpreting Validation Results
+
+- **Significant associations in expected directions** support construct validity. If your "progressive" class has significantly higher education and younger age, as your theory predicted, this strengthens confidence in the typology.
+
+- **Significant associations in unexpected directions** suggest either that the labels are wrong or that the theory needs revision. Either way, the finding is informative.
+
+- **No significant associations** may mean the classes are not meaningfully related to the external variables, or that the sample size is too small to detect the associations, or that the classify-analyze approach has attenuated the effects due to classification error.
+
+---
+
+# External Validity (Replication)
+
+## Why Replication Is Essential
+
+A latent class solution identified in one dataset might be a genuine population feature — or it might be an artifact of that specific sample's idiosyncrasies. External validity is established by demonstrating that the same class structure emerges when the analysis is repeated on different data.
+
+The strongest evidence comes from replicating the LCA on an entirely independent sample — a different survey, a different country, or a different time period. If the same number of classes, with similar item-response probability profiles, emerges in multiple independent samples, the typology is robust.
+
+## Split-Sample Cross-Validation
+
+If you have only one dataset, you can approximate external validation by splitting your sample into two halves and running the LCA independently on each.
+
+```{r split-sample}
+set.seed(99)
+n_total <- nrow(sim_data)
+split_idx <- sample(1:n_total, size = floor(n_total / 2))
+
+train_data <- sim_data[split_idx, ]
+test_data <- sim_data[-split_idx, ]
+
+cat("Training set: n =", nrow(train_data), "\n")
+cat("Test set: n =", nrow(test_data), "\n")
+
+# Estimate the same model on each half
+set.seed(123)
+fit_train <- poLCA(f_lca, data = train_data, nclass = length(best_model$P),
+                    maxiter = 5000, nrep = 50, verbose = FALSE)
+set.seed(456)
+fit_test <- poLCA(f_lca, data = test_data, nclass = length(best_model$P),
+                   maxiter = 5000, nrep = 50, verbose = FALSE)
+
+# Compare profiles
+cat("\n--- Training Set Profiles ---\n")
+cat("Prevalences:", round(fit_train$P, 3), "\n")
+train_probs <- matrix(NA, nrow = length(fit_train$P), ncol = length(item_names))
+for (j in seq_along(item_names)) {
+  train_probs[, j] <- fit_train$probs[[item_names[j]]][, 1]
+}
+colnames(train_probs) <- item_names
+print(round(train_probs, 3))
+
+cat("\n--- Test Set Profiles ---\n")
+cat("Prevalences:", round(fit_test$P, 3), "\n")
+test_probs <- matrix(NA, nrow = length(fit_test$P), ncol = length(item_names))
+for (j in seq_along(item_names)) {
+  test_probs[, j] <- fit_test$probs[[item_names[j]]][, 1]
+}
+colnames(test_probs) <- item_names
+print(round(test_probs, 3))
+```
+
+**Interpreting the comparison:** Due to label switching, the class numbering will likely differ between the two halves. Match classes by their profiles, not their labels. If the profiles are substantively similar across both halves — the same types of configurations appear with similar item-response probabilities — external validity is supported. If the profiles diverge substantially, the solution may be sample-specific.
+
+A quantitative approach: for each estimated class in the training set, find the closest matching class in the test set by computing the mean absolute difference in item-response probabilities. Differences below 0.10 across items indicate good replication.
+
+```{r profile-matching}
+cat("\n=== PROFILE MATCHING ACROSS SPLITS ===\n")
+cat("(Match training classes to the closest test class by profile similarity)\n\n")
+
+for (c_train in 1:length(fit_train$P)) {
+  diffs <- numeric(length(fit_test$P))
+  for (c_test in 1:length(fit_test$P)) {
+    diffs[c_test] <- mean(abs(train_probs[c_train, ] - test_probs[c_test, ]))
+  }
+  best_match <- which.min(diffs)
+  cat(sprintf("Train Class %d → best match: Test Class %d (MAD = %.3f)\n",
+              c_train, best_match, diffs[best_match]))
+}
+
+cat("\nMAD < 0.10: Good replication\n")
+cat("MAD 0.10-0.15: Moderate replication\n")
+cat("MAD > 0.15: Poor replication — class may be unstable\n")
+```
+
+## Cross-Survey and Cross-Temporal Replication
+
+The strongest external validation comes from repeating the analysis on entirely independent data sources. In practice, this means:
+
+- Conducting the same LCA on a different wave of a longitudinal survey (e.g., if your data come from the 2018 ESS, replicate on the 2020 ESS).
+- Replicating in a different national sample (if your theory claims the typology is general rather than culture-specific).
+- Replicating on a different survey instrument that measures the same constructs with different items (the most demanding test, as it requires the latent class structure to be invariant across measurement instruments).
+
+These replications are part of a broader research program and typically span multiple papers or studies.
+
+---
+
+# What to Do When Validation Fails
+
+If construct validity tests show no expected associations, or if replication produces a different class structure:
+
+1. **Re-examine your labels.** The classes may be real but mislabeled. Check whether the profiles match a different theoretical interpretation.
+2. **Re-examine your indicators.** The indicator set may be inadequate — too few items, unbalanced dimensions, or items that fail to capture the theoretically relevant variation.
+3. **Consider model misspecification.** The wrong number of classes may have been selected. Revisit Module 6 and consider adjacent solutions.
+4. **Accept the finding.** If validation consistently fails, the latent class structure may genuinely not exist in the population as theorized. This is a valid scientific result.
+
+---
+
+# Summary
+
+After this module, you should be able to:
+
+1. Design and execute construct validity tests using external variables.
+2. Interpret validation results and distinguish supportive, unsupportive, and ambiguous outcomes.
+3. Conduct split-sample cross-validation and interpret profile matching results.
+4. Understand the hierarchy of external validation evidence (split-sample < different wave < different population).
+5. Respond constructively when validation fails.
+
+Proceed to **Module 10: Incorporating Covariates** to model the relationship between external characteristics and class membership using the modern three-step approach.
+
+---
+
+# References
+
+Bonikowski, B. (2021). Mapping culture with latent class analysis. *Nations and Nationalism, 27*(4), 926–941.
+
+Collins, L. M., & Lanza, S. T. (2010). *Latent class and latent transition analysis.* Wiley.
+
+Weller, B. E., Bowen, N. K., & Faubert, S. J. (2020). Latent class analysis: A guide to best practice. *Journal of Black Psychology, 46*(4), 287–311.
+
+---
+
+```{r nav-footer, echo=FALSE, results='asis'}
+cat('<div style="margin-top:3em; padding-top:1em; border-top:1px solid #ddd; font-size:0.9em; color:#555;">
+<a href="index.html">&#8617; Course Index</a>
+</div>')
+```

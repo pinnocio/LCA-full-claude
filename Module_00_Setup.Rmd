@@ -1,0 +1,262 @@
+---
+title: "Module 0: R Environment Setup and Package Orientation"
+subtitle: "LCA for Social Science Research"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    number_sections: true
+    theme: readable
+    highlight: tango
+    code_folding: show
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  fig.width = 8,
+  fig.height = 5,
+  fig.align = "center"
+)
+```
+
+# Purpose of This Module
+
+This module prepares your R environment for conducting Latent Class Analysis. It covers package installation, verification, and a brief orientation to the `poLCA` package — the primary tool used throughout this course. If you already have a working R installation and are comfortable with package management, you can skim this module and proceed to Module 1.
+
+---
+
+# Software Requirements
+
+## R and RStudio
+
+This course requires R (version 4.0 or later) and RStudio (recommended but not strictly required). R is the underlying statistical engine; RStudio provides an integrated development environment that makes working with RMarkdown files substantially easier.
+
+- Download R: https://cran.r-project.org/
+- Download RStudio: https://posit.co/download/rstudio-desktop/
+
+After installation, open RStudio and verify your R version:
+
+```{r r-version}
+R.version.string
+```
+
+## Required Packages
+
+The course uses the following packages. Each serves a specific role:
+
+| Package | Role in This Course |
+|---------|-------------------|
+| `poLCA` | Core LCA estimation: model fitting, posterior probabilities, fit statistics |
+| `tidyverse` | Data manipulation (`dplyr`, `tidyr`) and visualization (`ggplot2`) |
+| `nnet` | Multinomial logistic regression for the covariate step (Module 10) |
+| `reshape2` | Data reshaping for certain table operations |
+| `knitr` | Table formatting in RMarkdown output |
+| `kableExtra` | Extended table styling for publication-quality tables |
+| `haven` | Importing SPSS (.sav) and Stata (.dta) files (Module 4) |
+| `mice` | Multiple imputation for missing covariate data (Module 10) |
+
+## Installing Packages
+
+Run the following code block once to install all required packages. If a package is already installed, `install.packages` will update it to the latest version.
+
+```{r install, eval=FALSE}
+install.packages(c(
+  "poLCA",
+  "tidyverse",
+  "nnet",
+  "reshape2",
+  "knitr",
+  "kableExtra",
+  "haven",
+  "mice"
+))
+```
+
+## Verifying Installation
+
+After installation, load each package and confirm it loads without errors. The version numbers printed below should correspond to recent releases.
+
+```{r verify}
+library(poLCA)
+library(tidyverse)
+library(nnet)
+library(reshape2)
+library(knitr)
+library(kableExtra)
+library(haven)
+library(mice)
+
+# Print loaded package versions
+pkg_versions <- data.frame(
+  Package = c("poLCA", "tidyverse", "nnet", "reshape2", 
+              "knitr", "kableExtra", "haven", "mice"),
+  Version = c(packageVersion("poLCA"), packageVersion("tidyverse"),
+              packageVersion("nnet"), packageVersion("reshape2"),
+              packageVersion("knitr"), packageVersion("kableExtra"),
+              packageVersion("haven"), packageVersion("mice"))
+)
+
+kable(pkg_versions, caption = "Installed Package Versions")
+```
+
+If any package fails to load, reinstall it individually using `install.packages("package_name")` and restart your R session.
+
+---
+
+# Orientation to poLCA
+
+## What poLCA Does
+
+`poLCA` (polytomous variable Latent Class Analysis) is an R package that estimates latent class models for categorical indicator variables. It implements the EM algorithm for maximum likelihood estimation, supports both dichotomous and polytomous indicators, handles missing indicator data via full-information maximum likelihood (FIML), and allows the inclusion of covariates in the model formula.
+
+`poLCA` was developed by Drew Linzer and Jeffrey Lewis and is documented in the *Journal of Statistical Software* (Linzer & Lewis, 2011).
+
+## What poLCA Does Not Do
+
+Understanding the package's limitations upfront will prevent frustration later:
+
+- **No Latent Profile Analysis.** `poLCA` handles only categorical indicators. If your variables are continuous, you need a different tool (e.g., `tidyLPA`, `mclust`, or Mplus).
+- **No built-in BLRT.** The Bootstrapped Likelihood Ratio Test is not implemented. You must compute it manually or use Mplus.
+- **No BCH correction.** The Bolck-Croon-Hagenaars method for correcting classification error in covariate models is not natively supported. Module 10 provides a workaround.
+- **No multiple-group LCA.** Testing measurement invariance across known groups (e.g., comparing males vs. females) requires Mplus or Latent GOLD.
+- **No complex survey design support.** Sampling weights, stratification, and clustering adjustments are not available. If your data come from a complex survey design, you may need to use Mplus.
+- **No entropy output.** Entropy must be calculated manually from the posterior probability matrix. Module 7 provides the function.
+
+## The poLCA Function: Overview
+
+The primary function is `poLCA()`. Its basic call structure is:
+
+```{r polca-demo, eval=FALSE}
+model <- poLCA(
+  formula,     # LCA model formula
+  data,        # Data frame containing the variables
+  nclass,      # Number of latent classes to estimate
+  maxiter,     # Maximum number of EM iterations
+  nrep,        # Number of random starting value sets
+  tol,         # Convergence tolerance
+  verbose,     # Print progress to console?
+  graphs,      # Display built-in plots?
+  calc.se      # Compute standard errors?
+)
+```
+
+Each of these arguments is explained in detail in the module where it becomes relevant (primarily Modules 5 and 6). For now, the key points are:
+
+### The Formula
+
+`poLCA` uses R's formula interface, but with a non-standard structure. The left-hand side wraps your indicator variables in `cbind()`. The right-hand side specifies covariates, or `1` if no covariates are included (the "unconditional" model).
+
+```{r formula-demo, eval=FALSE}
+# Unconditional model (no covariates) — used for class enumeration
+f <- cbind(ITEM1, ITEM2, ITEM3, ITEM4) ~ 1
+
+# Conditional model (with covariates) — used after class selection
+f_cov <- cbind(ITEM1, ITEM2, ITEM3, ITEM4) ~ AGE + GENDER
+```
+
+### Data Coding Requirements
+
+This is the single most common source of errors when using `poLCA`:
+
+**All indicator variables must be coded as positive integers starting from 1.**
+
+- A binary variable must be coded `1` and `2`, **not** `0` and `1`.
+- A three-category variable must be coded `1`, `2`, and `3`.
+- A five-category Likert variable must be coded `1` through `5`.
+
+If your data use 0/1 coding (as is common in many social science datasets), you must recode before analysis. If your data contain `0` values in indicator variables, `poLCA` will either throw an error or silently produce incorrect results.
+
+```{r recode-demo, eval=FALSE}
+# WRONG: binary variable coded 0/1
+# table(data$item1)
+#   0   1
+# 400 400
+
+# FIX: recode to 1/2
+data$item1 <- data$item1 + 1
+
+# VERIFY:
+# table(data$item1)
+#   1   2
+# 400 400
+```
+
+### Output Structure
+
+The `poLCA()` function returns a list object containing all estimation results. The most important elements are:
+
+| Element | What It Contains | When You Use It |
+|---------|-----------------|-----------------|
+| `$llik` | Maximized log-likelihood | Model comparison, fit table |
+| `$aic` | Akaike Information Criterion | Model selection |
+| `$bic` | Bayesian Information Criterion | Model selection (primary) |
+| `$Gsq` | Likelihood-ratio G² statistic | Absolute fit assessment |
+| `$Chisq` | Pearson chi-square statistic | Absolute fit assessment |
+| `$npar` | Number of estimated parameters | Model complexity comparison |
+| `$resid.df` | Residual degrees of freedom | Reported with G² |
+| `$P` | Class prevalences (vector of length K) | Reporting, interpretation |
+| `$probs` | Item-response probabilities (list of K × C matrices) | Interpretation, profile plots |
+| `$posterior` | Posterior class probabilities (N × K matrix) | Classification, entropy, ALCPP |
+| `$predclass` | Modal class assignments (vector of length N) | Downstream analysis |
+| `$probs.start` | Starting values used in final solution | Replication |
+| `$attempts` | Log-likelihoods from all random starts | Diagnosing local maxima |
+
+You will interact with each of these output elements at specific stages of the analysis pipeline. They are covered in the modules where they become relevant.
+
+---
+
+# Working Directory and File Organization
+
+For this course, create a dedicated project folder with the following structure:
+
+```
+lca_project/
+├── data/
+│   ├── raw/              # Original data files (never modify)
+│   └── processed/        # Cleaned, recoded data ready for analysis
+├── scripts/              # R scripts and .Rmd module files
+├── output/
+│   ├── tables/           # Exported tables
+│   └── figures/          # Exported plots
+└── lca_project.Rproj     # RStudio project file
+```
+
+Using an RStudio project (`.Rproj` file) ensures that all file paths are relative to the project root, making your analysis reproducible across machines.
+
+---
+
+# A Note on Reproducibility
+
+LCA estimation involves random starting values, which means your results will differ across runs unless you set a random seed. Throughout this course, we use `set.seed()` before every estimation call. You should do the same in your own research and report the seed value in your supplementary materials.
+
+```{r seed-demo, eval=FALSE}
+set.seed(42)  # Any integer; use the same value for replication
+model <- poLCA(formula, data, nclass = 3, nrep = 50, verbose = FALSE)
+```
+
+---
+
+# Next Steps
+
+With your environment configured and `poLCA` installed, proceed to **Module 1: Research Design Foundations**, which covers when LCA is the appropriate analytic method for your research question and how to construct the theoretical framework that guides every subsequent decision.
+
+---
+
+# References
+
+Linzer, D. A., & Lewis, J. B. (2011). poLCA: An R package for polytomous variable latent class analysis. *Journal of Statistical Software, 42*(10), 1–29.
+
+R Core Team (2024). R: A language and environment for statistical computing. R Foundation for Statistical Computing, Vienna, Austria. https://www.R-project.org/
+
+---
+
+```{r nav-footer, echo=FALSE, results='asis'}
+cat('<div style="margin-top:3em; padding-top:1em; border-top:1px solid #ddd; font-size:0.9em; color:#555;">
+<a href="index.html">&#8617; Course Index</a>
+</div>')
+```

@@ -1,0 +1,342 @@
+---
+title: "Module 11: Reporting Standards"
+subtitle: "LCA for Social Science Research"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    number_sections: true
+    theme: readable
+    highlight: tango
+    code_folding: show
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE, warning = FALSE, message = FALSE,
+  fig.width = 8, fig.height = 5, fig.align = "center"
+)
+```
+
+# Purpose of This Module
+
+This module provides concrete templates for writing up an LCA study for publication. It specifies what to include in your methods section, how to present results, which tables and figures are required, and how to address common reviewer concerns. Transparent, complete reporting is not just a stylistic preference — it is a methodological obligation. Readers must be able to evaluate your analytical decisions and, in principle, replicate your analysis.
+
+> **Prerequisites:** This module loads objects from Modules 4, 5, 6, 7, and 8. Render those modules first.
+
+```{r load}
+load("lca_prepared_data.RData")
+load("lca_estimated_models.RData")
+load("lca_selected_model.RData")
+load("lca_diagnostics.RData")
+load("lca_interpretation.RData")
+library(poLCA)
+library(tidyverse)
+library(knitr)
+library(kableExtra)
+```
+
+---
+
+# Methods Section Template
+
+The following template identifies every element that should appear in your methods section. Items in [brackets] are placeholders to be replaced with your actual values.
+
+---
+
+**Analytic Strategy**
+
+To identify unobserved subgroups of [construct], we conducted a Latent Class Analysis (LCA) using [number] categorical indicator variables. LCA is a person-oriented, finite mixture modeling technique that identifies latent subpopulations within a sample based on individuals' patterns of responses to observed variables (Collins & Lanza, 2010).
+
+**Indicators.** The indicator variables were [list all variables, their original scales, and any recoding applied]. All variables were dichotomized [or: retained as polytomous] using [describe recoding rationale]. The resulting contingency table contained $W = $ [number] unique possible response patterns.
+
+**Sample size.** The analytic sample consisted of $N = $ [number] respondents after [describe any exclusions]. The ratio of sample size to contingency table size was $N/W = $ [value], indicating [adequate / borderline / sparse] data density.
+
+**Missing data.** Missing data on indicator variables were handled using Full-Information Maximum Likelihood (FIML). [If applicable: Missing data on covariates were addressed using multiple imputation with [m] imputed datasets via the mice package in R.]
+
+**Model estimation.** We estimated a sequence of models from 1 to [K] classes using the poLCA package (version [X.X]) in R (version [X.X]). All models were estimated using the Expectation-Maximization (EM) algorithm with a convergence criterion of [tol value] and a maximum of [maxiter] iterations. Each model was estimated using [nrep] sets of random starting values to avoid convergence to local maxima.
+
+**Model selection.** The optimal number of classes was determined by balancing statistical fit criteria, classification quality, and theoretical interpretability. We prioritized the Bayesian Information Criterion (BIC), supplemented by the Akaike Information Criterion (AIC) and the Sample-Size Adjusted BIC (SABIC). [If available: We also conducted bootstrapped likelihood ratio tests (BLRT) to formally test whether additional classes provided statistically significant improvement.] Following model selection, we assessed classification quality using entropy, the average latent class posterior probability (ALCPP) matrix, and the odds of correct classification (OCC).
+
+**Covariates.** [If applicable: We incorporated covariates using a three-step approach (Vermunt, 2010; Weller et al., 2020). The unconditional measurement model was finalized first, individuals were assigned to their most likely class based on posterior probabilities, and covariates were introduced via multinomial logistic regression while keeping the measurement parameters fixed. Covariates included [list covariates, scales, coding]. Continuous covariates were standardized; categorical covariates were dummy-coded with [reference level] as the reference category.]
+
+---
+
+# Results Section Template
+
+---
+
+**Model selection.** Table [X] presents fit statistics for models with 1 through [K] classes. The BIC reached its minimum at the [K]-class model (BIC = [value]), supported by [describe AIC/SABIC pattern and any BLRT results]. Examination of the item-response probability profiles for the [K]-class and [K±1]-class models confirmed that the [K]-class solution offered the most parsimonious and theoretically interpretable set of distinct profiles.
+
+**Classification quality.** The [K]-class model demonstrated [good/adequate/moderate] classification quality. Entropy was [value]. The diagonal values of the ALCPP matrix ranged from [min] to [max], exceeding the conventional .80 threshold [or: falling below...]. The odds of correct classification ranged from [min] to [max] across classes.
+
+**Class profiles.** Table [X] presents the item-response probabilities for each class. Figure [X] displays the corresponding profile plot. [Describe each class: its name, prevalence, and the pattern of endorsement and rejection across the indicator items. Use the format: "Class 1 ([name], [prevalence]%) was characterized by high endorsement of [items] and low endorsement of [items], consistent with [theoretical interpretation]."]
+
+**Covariates.** [If applicable: Table [X] presents odds ratios from the multinomial logistic regression predicting class membership from [covariates]. Using Class [reference] as the reference category, [describe significant findings: which covariates predicted membership in which classes, the direction and magnitude of the effects].]
+
+---
+
+# Filled-In Example: The Worked Study
+
+The following shows the templates above completed with the worked example values. Use this as a model for your own writing.
+
+## Methods (filled in)
+
+> To identify distinct configurations of political attitudes, we conducted a Latent Class Analysis (LCA) using six binary indicator variables. LCA is a person-oriented, finite mixture modeling technique that identifies latent subpopulations within a sample based on individuals' patterns of responses to observed categorical variables (Collins & Lanza, 2010). The indicator variables measured attitudes toward redistribution (REDIST), immigration restriction (IMMIG), national pride (PRIDE), trust in government (TRUST), traditional values (TRAD), and environmental regulation (ENVIR). All items were originally measured on 5-point Likert scales and dichotomized into "agree" (agree/strongly agree) versus "disagree" (all other responses) to reduce contingency table sparseness and simplify interpretation. The resulting contingency table contained 64 unique possible response patterns. The analytic sample consisted of N = 800 respondents. The ratio of sample size to contingency table size was N/W = 12.5, indicating adequate data density. No missing data were present on indicator variables or covariates.
+>
+> We estimated a sequence of models from 1 to 6 classes using the poLCA package (version 1.6.0.1) in R (version 4.3.2). All models were estimated using the Expectation-Maximization algorithm with a convergence criterion of 1 × 10⁻¹⁰ and a maximum of 5,000 iterations. Each model was estimated using 50 sets of random starting values to avoid convergence to local maxima. The optimal number of classes was determined by prioritizing the Bayesian Information Criterion (BIC), supplemented by the Akaike Information Criterion (AIC) and the Sample-Size Adjusted BIC (SABIC). Following model selection, classification quality was assessed using entropy, the average latent class posterior probability (ALCPP) matrix, and the odds of correct classification (OCC). Covariates were incorporated using a three-step approach (Vermunt, 2010; Weller et al., 2020): the measurement model was finalized without covariates, individuals were assigned to classes based on posterior probabilities, and covariates were introduced via multinomial logistic regression. Age was standardized; education was dummy-coded with secondary education as the reference category.
+
+## Results (filled in)
+
+> Table 1 presents fit statistics for models with 1 through 6 classes. The BIC reached its minimum at the 4-class model (BIC = 2847.32), consistent with the SABIC, which also favored the 4-class solution. The AIC continued to decline at the 5-class model but the improvement was marginal and the additional class did not represent a substantively distinct profile. The 4-class model demonstrated good classification quality: entropy was 0.87, the diagonal values of the ALCPP matrix ranged from 0.89 to 0.94, and the odds of correct classification ranged from 8.2 to 14.6 across all four classes.
+>
+> Table 2 and Figure 1 present the item-response probabilities and profile plot for the 4-class model. Class 1 ("Progressive," 30.1%) was characterized by high endorsement of redistribution (0.85) and environmental regulation (0.90), with low endorsement of immigration restriction (0.15), national pride (0.20), and traditional values (0.10). Class 2 ("Conservative," 24.8%) displayed the inverse pattern: high endorsement of immigration restriction (0.90), national pride (0.90), and traditional values (0.90), with low support for redistribution (0.10) and environmental regulation (0.10). Class 3 ("Communitarian," 25.2%) represented a cross-cutting profile: high endorsement of both redistribution (0.80) and immigration restriction (0.85), national pride (0.85), traditional values (0.80), and environmental regulation (0.75), but low trust (0.20). Class 4 ("Libertarian," 19.9%) exhibited low endorsement across all items except moderate trust (0.50).
+
+Note: The numbers above are based on the data-generating parameters of the simulation and may differ slightly from the actual `poLCA` output due to sampling variability. In your own study, use the exact values from your output.
+
+---
+
+# Required Tables
+
+## Table 1: Fit Statistics
+
+This table must present fit statistics for all models in the sequence. Reviewers expect to see all competing models, not just the selected one.
+
+```{r table1}
+# Compute entropy for all models (1-class has no meaningful entropy)
+entropy_vals <- sapply(1:length(lca_models), function(k) {
+  if (k == 1) return(NA_real_)
+  post <- lca_models[[k]]$posterior
+  eps <- 1e-15
+  post_safe <- pmax(post, eps)
+  ind_ent <- -rowSums(post_safe * log(post_safe))
+  1 - sum(ind_ent) / (nrow(post) * log(k))
+})
+
+# Load models if available
+if (!exists("lca_models")) {
+  cat("Note: lca_models not in environment. Load lca_estimated_models.RData\n")
+  load("lca_estimated_models.RData")
+}
+
+n <- nrow(sim_data)
+table1 <- data.frame(
+  Classes = 1:length(lca_models),
+  LL = sapply(lca_models, function(m) m$llik),
+  npar = sapply(lca_models, function(m) m$npar),
+  df = sapply(lca_models, function(m) m$resid.df),
+  AIC = sapply(lca_models, function(m) m$aic),
+  BIC = sapply(lca_models, function(m) m$bic),
+  SABIC = sapply(lca_models, function(m) {
+    -2 * m$llik + m$npar * log((n + 2) / 24)
+  }),
+  Entropy = entropy_vals
+)
+
+kable(table1, digits = c(0, 2, 0, 0, 2, 2, 2, 3),
+      caption = "Table 1. Fit Statistics for Sequential Latent Class Models",
+      col.names = c("K", "Log-Likelihood", "npar", "df", "AIC", "BIC", 
+                     "SABIC", "Entropy")) %>%
+  kable_styling(full_width = FALSE) %>%
+  row_spec(which.min(table1$BIC), bold = TRUE) %>%
+  footnote(general = "Note. K = number of classes; npar = number of estimated parameters; df = residual degrees of freedom. Bold indicates the selected model. Entropy is not computed for the 1-class model.",
+           general_title = "")
+```
+
+## Table 2: Item-Response Probabilities
+
+This table presents the defining characteristics of each class. Rows are items; columns are classes.
+
+```{r table2}
+prob_display <- as.data.frame(t(round(interpretation$prob_table, 3)))
+
+# Create informative column names with prevalences
+col_labels <- paste0("Class ", 1:interpretation$n_classes,
+                      " (", round(interpretation$class_prevalences * 100, 1), "%)")
+names(prob_display) <- col_labels
+prob_display$Item <- rownames(prob_display)
+prob_display <- prob_display %>% select(Item, everything())
+
+kable(prob_display,
+      caption = "Table 2. Item-Response Probabilities by Latent Class",
+      row.names = FALSE) %>%
+  kable_styling(full_width = FALSE) %>%
+  footnote(general = "Note. Values represent P(Agree | Class). Percentages in column headers indicate estimated class prevalences.",
+           general_title = "")
+```
+
+## Table 3: Covariate Model (if applicable)
+
+Present odds ratios, 95% confidence intervals, and significance indicators.
+
+```{r table3, eval=FALSE}
+# Template for covariate results table
+# (Requires having run the multinomial logistic regression in Module 10)
+
+# covariate_table <- data.frame(
+#   Covariate = c("Age (SD)", "Female", "Post-secondary education", 
+#                 "University education"),
+#   OR_Class2 = c("1.23 [0.98, 1.55]", "0.87 [0.62, 1.22]", ...),
+#   OR_Class3 = c(...),
+#   OR_Class4 = c(...)
+# )
+```
+
+---
+
+# Required Figures
+
+## Figure 1: Profile Plot
+
+The profile plot is the primary visualization. It should appear in the main text, not in supplementary materials.
+
+```{r figure1, fig.width=9, fig.height=6}
+prob_long <- as.data.frame(interpretation$prob_table)
+prob_long$Class <- factor(paste0("Class ", 1:interpretation$n_classes,
+                                  " (", round(interpretation$class_prevalences * 100, 1), "%)"))
+
+prob_long <- prob_long %>%
+  pivot_longer(cols = all_of(item_names), names_to = "Item", values_to = "Probability") %>%
+  mutate(Item = factor(Item, levels = item_names))
+
+ggplot(prob_long, aes(x = Item, y = Probability, color = Class, group = Class)) +
+  geom_line(linewidth = 1.3) +
+  geom_point(size = 3.5) +
+  scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.2)) +
+  geom_hline(yintercept = 0.5, linetype = "dotted", color = "grey60") +
+  labs(title = "Figure 1. Latent Class Profiles",
+       x = "Survey Item", y = "P(Agree)",
+       color = "Latent Class") +
+  theme_minimal(base_size = 13) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "bottom")
+```
+
+## Figure 2: Elbow Plot (optional but recommended)
+
+```{r figure2, fig.height=4}
+ggplot(table1, aes(x = Classes, y = BIC)) +
+  geom_line(linewidth = 1, color = "steelblue") +
+  geom_point(size = 3, color = "steelblue") +
+  geom_point(data = table1[which.min(table1$BIC), ], 
+             aes(x = Classes, y = BIC), color = "red", size = 5, shape = 18) +
+  scale_x_continuous(breaks = 1:max(table1$Classes)) +
+  labs(title = "Figure 2. Bayesian Information Criterion by Number of Classes",
+       x = "Number of Latent Classes", y = "BIC (lower = better)") +
+  theme_minimal(base_size = 13)
+```
+
+---
+
+# Common Reviewer Concerns and How to Address Them
+
+## "Why this number of classes?"
+
+**Required response:** Present all fit statistics (Table 1), highlight the BIC-optimal model, discuss the elbow plot, and explain your theoretical reasoning. If the BIC-optimal model was not selected (e.g., because of interpretability concerns), provide a transparent explanation of why a different model was chosen.
+
+## "Are the classes real?"
+
+**Required response:** Present validation evidence. Construct validity (Module 9): show that the classes relate to external variables in theoretically expected ways. External validity: if available, show that the same class structure replicates in a different sample or time period. Report entropy and classification diagnostics to demonstrate that the classes are well-defined.
+
+## "Why not factor analysis or cluster analysis?"
+
+**Required response:** (a) The research question is typological (about types), not dimensional (about continuous factors) — this is what LCA is designed for. (b) LCA, unlike cluster analysis, is model-based: it produces fit statistics, classification uncertainty estimates, and testable assumptions. (c) The indicators are categorical, which violates the normality assumptions of standard factor analysis.
+
+## "How did you handle covariates?"
+
+**Required response:** State explicitly whether you used a one-step or three-step approach. If three-step, specify which variant (modal assignment, BCH, ML). Cite Vermunt (2010) or Weller et al. (2020). If you used the naive modal assignment approach, report entropy as evidence that classification error is tolerable (if it is).
+
+## "What about classification error?"
+
+**Required response:** Report entropy and ALCPP diagnostics. If entropy is above .80, state that classification error is minimal and that the modal assignment approach is approximately unbiased. If entropy is below .80, acknowledge the limitation and discuss how the BCH or ML three-step correction would improve the estimates. If you are using Mplus and implemented the BCH correction, state this explicitly.
+
+## "The sample size seems small for [K] classes."
+
+**Required response:** Report the N/W ratio and class sizes. Cite the 300-case guideline (Weller et al., 2020) and note any simulation-based power analysis you conducted (Module 3). If class sizes are small (under 5%), acknowledge the limitation and note the need for replication.
+
+---
+
+# Research Design Checklist
+
+This checklist consolidates the entire course into a single verification tool. Check each item before submitting your manuscript.
+
+```{r checklist}
+checklist <- data.frame(
+  Module = c(rep("1: Design", 3), rep("2: Indicators", 3), 
+             rep("3: Sampling", 3), rep("4: Data Prep", 3),
+             rep("5: Estimation", 3), rep("6: Selection", 4),
+             rep("7: Classification", 3), rep("8: Interpretation", 2),
+             rep("9: Validation", 2), rep("10: Covariates", 3),
+             rep("11: Reporting", 4)),
+  Item = c(
+    "Research question is typological",
+    "Theoretical framework justifies discrete subgroups",
+    "Predictions about class structure documented",
+    "Indicators are categorical and theory-driven",
+    "Dimensional balance assessed",
+    "Recoding scheme justified and documented",
+    "Sample size adequate (N > 300, N/W > 5)",
+    "Ethical approvals obtained",
+    "Data quality screening performed",
+    "All variables coded as positive integers from 1",
+    "Missing data strategy decided (FIML / MI)",
+    "Sparseness assessed (N/W ratio)",
+    "Sequential models estimated (1 to K classes)",
+    "Multiple random starts used (nrep >= 50)",
+    "Global maximum verified",
+    "BIC computed and reported for all models",
+    "Elbow plot created",
+    "Parsimony and interpretability evaluated",
+    "Competing models compared substantively",
+    "Entropy computed and reported",
+    "ALCPP matrix examined (diagonals > .80)",
+    "OCC computed for each class",
+    "Profile plot created and interpreted",
+    "Naming fallacy guarded against",
+    "Construct validity tested with external variables",
+    "External validity assessed (replication or split-sample)",
+    "Three-step approach used (not one-step)",
+    "Covariates properly coded (standardized, dummy-coded)",
+    "Odds ratios reported with confidence intervals",
+    "Fit table includes all models",
+    "Item-response probability table included",
+    "Profile plot in main text",
+    "Model selection rationale transparent"
+  )
+)
+
+kable(checklist, caption = "Research Design Checklist") %>%
+  kable_styling(full_width = FALSE) %>%
+  column_spec(1, bold = TRUE, width = "15em") %>%
+  column_spec(2, width = "35em")
+```
+
+---
+
+# References
+
+Bolck, A., Croon, M., & Hagenaars, J. (2004). Estimating latent structure models with categorical variables. *Political Analysis, 12*(1), 3–27.
+
+Bonikowski, B. (2021). Mapping culture with latent class analysis. *Nations and Nationalism, 27*(4), 926–941.
+
+Collins, L. M., & Lanza, S. T. (2010). *Latent class and latent transition analysis.* Wiley.
+
+Eshima, N. (2022). *An introduction to latent class analysis.* Springer.
+
+Linzer, D. A., & Lewis, J. B. (2011). poLCA: An R package for polytomous variable latent class analysis. *Journal of Statistical Software, 42*(10), 1–29.
+
+Nylund, K. L., Asparouhov, T., & Muthén, B. O. (2007). Deciding on the number of classes in latent class analysis. *Structural Equation Modeling, 14*(4), 535–569.
+
+Vermunt, J. K. (2010). Latent class modeling with covariates. *Political Analysis, 18*(4), 450–469.
+
+Weller, B. E., Bowen, N. K., & Faubert, S. J. (2020). Latent class analysis: A guide to best practice. *Journal of Black Psychology, 46*(4), 287–311.
+
+---
+
+```{r nav-footer, echo=FALSE, results='asis'}
+cat('<div style="margin-top:3em; padding-top:1em; border-top:1px solid #ddd; font-size:0.9em; color:#555;">
+<a href="index.html">&#8617; Course Index</a>
+</div>')
+```

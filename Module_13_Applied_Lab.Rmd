@@ -1,0 +1,488 @@
+---
+title: "Module 13: Applied Lab — Working with Real Data"
+subtitle: "LCA for Social Science Research"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    number_sections: true
+    theme: readable
+    highlight: tango
+    code_folding: show
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE, warning = FALSE, message = FALSE,
+  fig.width = 8, fig.height = 5, fig.align = "center"
+)
+```
+
+# Purpose of This Module
+
+Every preceding module used simulated data with a known class structure. That was pedagogically necessary — it allowed you to verify that the analysis recovers the truth. But simulated data is misleadingly clean. Real data confronts you with problems simulations never produce: skewed distributions, theoretically ambiguous recoding decisions, item-response probabilities that don't cluster neatly near 0 or 1, fit criteria that point in different directions, classes that do not correspond to your theoretical predictions, and entropy values that are lower than you would like.
+
+This module provides three things:
+
+1. **Guided analysis:** A complete, annotated LCA using the `cheating` dataset built into `poLCA` — real survey data on academic dishonesty among college students. You follow along, executing each step and interpreting the output.
+2. **Independent exercise:** A self-directed analysis using the `election` dataset built into `poLCA` — real data from the 2000 American National Election Study on political attitudes. You receive the research question and the data; you make all analytical decisions yourself.
+3. **Accessing public survey data:** Instructions for obtaining real social science datasets (ESS, GSS, ANES, WVS) for your own research projects.
+
+```{r packages}
+library(poLCA)
+library(tidyverse)
+library(knitr)
+library(kableExtra)
+library(nnet)
+```
+
+---
+
+# Part 1: Guided Analysis — Academic Cheating Behavior
+
+## The Dataset
+
+The `cheating` dataset is included in the `poLCA` package. It contains self-reported data from 319 college students on four types of academic dishonesty. All variables are binary (1 = no, 2 = yes).
+
+```{r load-cheating}
+data(cheating)
+```
+
+Before you do anything else, examine the data. In real research, you never run a model without first understanding what the variables are, how they are coded, and what their distributions look like.
+
+```{r examine-cheating}
+# What are the variables?
+str(cheating)
+
+# How many observations?
+cat("N =", nrow(cheating), "\n\n")
+
+# What does the documentation say?
+# Run ?cheating in your console for the full help page
+
+# Variable descriptions:
+# LIEEXAM   - Lied to avoid taking an exam
+# LIEPAPER  - Lied to avoid handing in a paper on time
+# FRAUD     - Purchased a term paper or had someone else write one
+# COPYEXAM  - Copied answers during an exam from someone else
+```
+
+## Step 1: Verify Coding and Examine Distributions
+
+```{r cheating-coding}
+# Check coding: all values must be positive integers starting from 1
+sapply(cheating, function(x) sort(unique(x)))
+```
+
+```{r cheating-frequencies}
+# Marginal frequencies
+freq_cheat <- cheating %>%
+  summarise(across(everything(), list(
+    pct_yes = ~ mean(.x == 2, na.rm = TRUE) * 100,
+    n_missing = ~ sum(is.na(.x))
+  ))) %>%
+  pivot_longer(everything(),
+               names_to = c("Item", ".value"),
+               names_pattern = "(.+)_(.+)")
+
+kable(freq_cheat, digits = 1,
+      caption = "Marginal Frequencies: Cheating Behaviors",
+      col.names = c("Item", "% Yes", "n Missing")) %>%
+  kable_styling(full_width = FALSE)
+```
+
+**Stop and think:** Before running any models, look at these frequencies. Which behaviors are common? Which are rare? If FRAUD has a very low endorsement rate (e.g., under 5%), it may not contribute much discriminatory information. Note this, but do not remove the variable — the theoretical question is whether types of cheaters differ in their propensity for fraud, and this is worth testing even if fraud is rare overall.
+
+## Step 2: Assess Sparseness
+
+```{r cheating-sparseness}
+W <- prod(sapply(cheating, function(x) length(unique(x))))
+N <- nrow(cheating)
+
+cat("Total possible response patterns (W):", W, "\n")
+cat("N:", N, "\n")
+cat("N/W ratio:", round(N / W, 2), "\n")
+
+# Count observed patterns
+patterns <- cheating %>%
+  count(LIEEXAM, LIEPAPER, FRAUD, COPYEXAM) %>%
+  arrange(desc(n))
+
+cat("Observed unique patterns:", nrow(patterns), "\n")
+cat("Patterns with n <= 1:", sum(patterns$n <= 1), "\n")
+
+kable(patterns, caption = "Observed Response Patterns (Cheating Data)") %>%
+  kable_styling(full_width = FALSE)
+```
+
+**Interpretation:** With 4 binary items, $W = 2^4 = 16$. With N = 319, the N/W ratio is approximately 20 — excellent data density. Sparseness is not a concern here.
+
+Notice the response patterns table. In real data, one or two patterns typically dominate (e.g., "no" on everything, or "yes" on everything), with the remaining patterns having smaller counts. This is normal and is exactly what LCA is designed to model — the dominant patterns correspond to the modal response profiles of the latent classes.
+
+## Step 3: Define the Formula and Estimate Sequential Models
+
+```{r cheating-formula}
+f_cheat <- cbind(LIEEXAM, LIEPAPER, FRAUD, COPYEXAM) ~ 1
+```
+
+```{r cheating-estimation}
+max_k <- 5
+cheat_models <- list()
+
+for (k in 1:max_k) {
+  set.seed(42)
+  cheat_models[[k]] <- poLCA(f_cheat, data = cheating, nclass = k,
+                              maxiter = 5000, nrep = 50, tol = 1e-10,
+                              verbose = FALSE, graphs = FALSE)
+}
+```
+
+## Step 4: Model Selection
+
+```{r cheating-fit}
+# Build fit table
+cheat_fit <- data.frame(
+  K = 1:max_k,
+  LL = sapply(cheat_models, function(m) m$llik),
+  npar = sapply(cheat_models, function(m) m$npar),
+  BIC = sapply(cheat_models, function(m) m$bic),
+  AIC = sapply(cheat_models, function(m) m$aic)
+)
+
+kable(cheat_fit, digits = 2,
+      caption = "Fit Statistics: Cheating Data") %>%
+  kable_styling(full_width = FALSE) %>%
+  row_spec(which.min(cheat_fit$BIC), bold = TRUE, background = "#e8f4e8")
+```
+
+**Read this table now using the procedure from Module 6:**
+
+1. Find the lowest BIC. Which row is it in?
+2. Does the AIC agree?
+3. Does the log-likelihood increase monotonically?
+4. Is there a clear elbow?
+
+```{r cheating-elbow}
+ggplot(cheat_fit, aes(x = K, y = BIC)) +
+  geom_line(linewidth = 1, color = "steelblue") +
+  geom_point(size = 3, color = "steelblue") +
+  scale_x_continuous(breaks = 1:max_k) +
+  labs(title = "Elbow Plot: BIC by Number of Classes (Cheating Data)",
+       x = "Number of Classes", y = "BIC") +
+  theme_minimal()
+```
+
+**Your decision:** Based on the BIC and the elbow plot, which model do you select? Write down your choice and your reasoning before continuing.
+
+## Step 5: Examine the Selected Model
+
+```{r cheating-select}
+# Select the BIC-optimal model
+best_k_cheat <- which.min(cheat_fit$BIC)
+best_cheat <- cheat_models[[best_k_cheat]]
+
+cat("Selected model:", best_k_cheat, "classes\n")
+cat("BIC:", best_cheat$bic, "\n")
+cat("Class prevalences:", round(best_cheat$P, 3), "\n")
+```
+
+## Step 6: Classification Quality
+
+```{r cheating-entropy}
+# Calculate entropy
+calc_entropy <- function(post) {
+  N <- nrow(post)
+  K <- ncol(post)
+  eps <- 1e-15
+  post_safe <- pmax(post, eps)
+  ind_ent <- -rowSums(post_safe * log(post_safe))
+  E <- 1 - sum(ind_ent) / (N * log(K))
+  return(E)
+}
+
+if (best_k_cheat > 1) {
+  ent_cheat <- calc_entropy(best_cheat$posterior)
+  cat("Entropy:", round(ent_cheat, 4), "\n")
+  
+  # ALCPP matrix
+  alcpp_cheat <- matrix(NA, best_k_cheat, best_k_cheat)
+  for (c in 1:best_k_cheat) {
+    members <- which(best_cheat$predclass == c)
+    alcpp_cheat[c, ] <- colMeans(best_cheat$posterior[members, , drop = FALSE])
+  }
+  
+  cat("\nALCPP Matrix:\n")
+  print(round(alcpp_cheat, 3))
+  cat("\nDiagonal values:", round(diag(alcpp_cheat), 3), "\n")
+}
+```
+
+**Is the classification quality adequate?** Compare against the thresholds from Module 7: entropy > .80 is good, ALCPP diagonals > .80 are acceptable, > .90 is excellent.
+
+## Step 7: Interpret the Profiles
+
+```{r cheating-profiles}
+# Extract item-response probabilities: P(Yes = 2 | Class)
+cheat_items <- c("LIEEXAM", "LIEPAPER", "FRAUD", "COPYEXAM")
+cheat_probs <- matrix(NA, best_k_cheat, length(cheat_items))
+for (j in seq_along(cheat_items)) {
+  cheat_probs[, j] <- best_cheat$probs[[cheat_items[j]]][, 2]  # column 2 = "yes"
+}
+colnames(cheat_probs) <- cheat_items
+rownames(cheat_probs) <- paste("Class", 1:best_k_cheat)
+
+kable(round(cheat_probs, 3),
+      caption = "Item-Response Probabilities: P(Yes) by Class") %>%
+  kable_styling(full_width = FALSE)
+```
+
+```{r cheating-profile-plot}
+cheat_prob_df <- as.data.frame(cheat_probs)
+cheat_prob_df$Class <- factor(paste0("Class ", 1:best_k_cheat, 
+                                      " (", round(best_cheat$P * 100, 1), "%)"))
+
+cheat_long <- cheat_prob_df %>%
+  pivot_longer(-Class, names_to = "Item", values_to = "Probability") %>%
+  mutate(Item = factor(Item, levels = cheat_items))
+
+ggplot(cheat_long, aes(x = Item, y = Probability, color = Class, group = Class)) +
+  geom_line(linewidth = 1.3) +
+  geom_point(size = 3.5) +
+  scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.2)) +
+  geom_hline(yintercept = 0.5, linetype = "dotted", color = "grey50") +
+  labs(title = "Cheating Behavior: Latent Class Profiles",
+       x = "Behavior", y = "P(Yes)") +
+  theme_minimal(base_size = 13) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "bottom")
+```
+
+**Now interpret:** 
+
+- Which class(es) represent non-cheaters? Which represent cheaters?
+- Are the differences quantitative (low vs. high cheating overall) or qualitative (different types of cheating)?
+- Does any class show a selective pattern — e.g., high on lying but low on fraud?
+- What provisional labels would you assign?
+
+Write out a full interpretation paragraph following the model from Module 8 before looking at any published analysis of this dataset.
+
+## Step 8: What You Just Learned from Real Data
+
+Compare your experience with the simulated data in Modules 4–8. You likely encountered several things the simulated data never produced:
+
+- **Entropy may be lower than you wanted.** Real data rarely produce the clean, well-separated classes of a simulation. Attitudinal data in particular tends to have classes that overlap.
+- **The "best" model may be less clear.** Fit criteria may not converge on a single solution. You had to exercise judgment.
+- **Class profiles may not match your initial expectations.** If you expected a clean "cheater vs. non-cheater" binary, you may have found something more complex — or simpler.
+- **Some items may be more diagnostic than others.** Not all indicators contribute equally. Some may have probabilities near 0.5 in every class, meaning they add noise without discriminatory power.
+
+These are the lessons that only real data can teach.
+
+---
+
+# Part 2: Independent Exercise — Political Attitudes (ANES)
+
+## The Dataset
+
+The `election` dataset in `poLCA` contains data from the 2000 American National Election Study. It includes responses on government spending priorities — the kinds of items frequently used in political sociology research.
+
+```{r load-election}
+data(election)
+```
+
+## Your Task
+
+Complete the following analysis independently. Use the modules as reference but make all decisions yourself.
+
+### Step 1: Examine the data
+
+```{r election-explore}
+# Start here: What variables are available?
+str(election)
+
+# How is each variable coded?
+sapply(election, function(x) sort(unique(x)))
+
+# How many observations?
+cat("N =", nrow(election), "\n")
+
+# Marginal frequencies
+sapply(election, table, useNA = "ifany")
+```
+
+**Questions to answer before proceeding:**
+
+- How many indicator variables are there, and how many response categories does each have?
+- Are any items polytomous (more than 2 categories)? If so, you will be running LCA with polytomous indicators — the item-response probability output will have more than 2 columns per item.
+- What is the N/W ratio? Is sparseness a concern?
+- Are there missing values?
+- Should you recode any variables? Why or why not?
+
+### Step 2: Define the formula and estimate models
+
+```{r election-formula, eval=FALSE}
+# Define your formula here
+# f_election <- cbind(???, ???, ???, ...) ~ 1
+
+# Estimate a sequence of models
+# How many classes should you test?
+
+# Your code:
+```
+
+### Step 3: Select the best model
+
+```{r election-select, eval=FALSE}
+# Build a fit table
+# Create an elbow plot
+# Identify the BIC-optimal model
+# Check adjacent models for interpretability
+
+# Your code:
+```
+
+### Step 4: Assess classification quality
+
+```{r election-quality, eval=FALSE}
+# Calculate entropy
+# Construct the ALCPP matrix
+# Calculate OCC
+# Are the diagnostics acceptable?
+
+# Your code:
+```
+
+### Step 5: Interpret and label the classes
+
+```{r election-interpret, eval=FALSE}
+# Extract item-response probabilities
+# Create a profile plot
+# IMPORTANT: For polytomous items, you will have multiple columns per item
+# (one for each response category). You need to examine the full probability
+# profiles, not just P(category 1).
+
+# Assign provisional labels
+# Write an interpretation paragraph following the Module 8 template
+
+# Your code:
+```
+
+### Step 6: Reflect
+
+After completing the analysis, write brief answers to these questions:
+
+1. How many classes did you select, and why?
+2. Were the classes substantively interpretable? Could you assign meaningful labels?
+3. What was the entropy? What does it imply about classification quality?
+4. Did you encounter any estimation problems (non-convergence, boundary estimates, local maxima)?
+5. If you were designing a follow-up study, what additional indicators would you include to better differentiate the classes?
+6. Would you recode the polytomous items differently? Why?
+
+---
+
+# Part 3: Accessing Public Survey Data for Your Own Research
+
+## European Social Survey (ESS)
+
+The ESS is a biennial cross-national survey covering social and political attitudes across 30+ European countries. It is free and widely used in comparative political sociology.
+
+- **Access:** https://www.europeansocialsurvey.org/
+- **Registration:** Free account required to download data
+- **Formats available:** SPSS (.sav), Stata (.dta), CSV
+- **Useful item batteries for LCA:** Immigration attitudes (IMUECLT, IMSMETN, IMPCNTR, etc.), trust items (TRSTPRL, TRSTLGL, TRSTPLC, etc.), political efficacy, left-right self-placement, welfare attitudes
+- **Import into R:**
+
+```{r ess-import, eval=FALSE}
+library(haven)
+ess <- read_sav("ESS10.sav")  # Replace with your file name
+
+# Select your indicator variables
+# Recode to poLCA format (positive integers from 1)
+# Remove labels: ess <- ess %>% mutate(across(everything(), as.numeric))
+```
+
+## General Social Survey (GSS)
+
+The GSS is a long-running American survey covering a broad range of social attitudes and behaviors. It is the most widely used social science dataset in the United States.
+
+- **Access:** https://gss.norc.org/
+- **Formats:** SPSS, Stata, R (via the `gssr` package)
+- **Useful items:** Attitudes toward government spending (NATRACE, NATARMS, NATEDUC, NATHEAL, etc.), confidence in institutions, social trust, political views
+- **Import into R:**
+
+```{r gss-import, eval=FALSE}
+# Option 1: Direct download and import
+library(haven)
+gss <- read_sav("GSS2022.sav")
+
+# Option 2: Using the gssr package
+# install.packages("gssr")
+library(gssr)
+data(gss_all)  # All years
+# Filter to a single year:
+gss2022 <- gss_all %>% filter(year == 2022)
+```
+
+## American National Election Studies (ANES)
+
+ANES provides the most detailed data on American political attitudes and behavior, including items on government spending, feeling thermometers, and policy preferences.
+
+- **Access:** https://electionstudies.org/
+- **Registration:** Free account required
+- **Formats:** SPSS, Stata, CSV
+- **Useful items:** Government spending scales, feeling thermometers (which would need to be categorized for LCA or used in LPA), party identification, issue positions
+
+## World Values Survey (WVS)
+
+The WVS covers fundamental values and beliefs across 100+ countries, making it ideal for cross-national LCA studies.
+
+- **Access:** https://www.worldvaluessurvey.org/
+- **Formats:** SPSS, Stata, R, CSV
+- **Useful items:** Emancipative values, survival vs. self-expression, traditional vs. secular-rational, institutional trust, political participation
+
+## Practical Advice for Working with Public Data
+
+1. **Read the codebook first.** Before importing, understand the variable names, coding schemes, missing value codes, and survey design (weighting, stratification). Public surveys use different missing value conventions (-1, -8, -9, 97, 98, 99, etc.) — all of these must be recoded to `NA` before analysis.
+
+2. **Select a single wave or round.** If the survey is longitudinal, start with one wave for a cross-sectional LCA. Multi-wave analysis requires LTA (Module 12).
+
+3. **Start small.** Select 5–8 indicators that span your theoretical domain. Resist the temptation to throw in 20+ items — you will create unmanageable sparseness and uninterpretable profiles.
+
+4. **Document everything.** Record the exact variable names, the original coding, your recoding decisions, and the survey weight variables (even if you do not use them). This documentation goes in your methods section and supplementary materials.
+
+5. **Expect messiness.** Real survey data will have skewed items, missing data, unexpected response patterns, and variables that do not behave as you expected. This is normal. The modules in this course have prepared you to handle it.
+
+---
+
+# Summary
+
+This module provided:
+
+1. A complete guided analysis of real data (academic cheating), walking through every decision point with annotated output.
+2. An independent exercise using real political attitude data (ANES 2000), requiring you to make all analytical decisions yourself.
+3. Practical instructions for accessing the major public survey datasets used in social science LCA research.
+
+If you have completed all three parts, you have the skills to design, execute, interpret, and report an LCA study using real data. Return to the earlier modules as reference as you apply these skills to your own research project.
+
+---
+
+# References
+
+Linzer, D. A., & Lewis, J. B. (2011). poLCA: An R package for polytomous variable latent class analysis. *Journal of Statistical Software, 42*(10), 1–29.
+
+European Social Survey ERIC. (2023). *ESS Round 10 Data.* https://www.europeansocialsurvey.org/
+
+Smith, T. W., Davern, M., Freese, J., & Morgan, S. L. (2022). *General Social Surveys, 1972–2022.* NORC.
+
+American National Election Studies. (2021). *ANES 2020 Time Series Study.* https://electionstudies.org/
+
+Inglehart, R., et al. (2022). *World Values Survey: All Rounds.* https://www.worldvaluessurvey.org/
+
+---
+
+```{r nav-footer, echo=FALSE, results='asis'}
+cat('<div style="margin-top:3em; padding-top:1em; border-top:1px solid #ddd; font-size:0.9em; color:#555;">
+<a href="index.html">&#8617; Course Index</a>
+</div>')
+```

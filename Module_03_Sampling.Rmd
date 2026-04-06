@@ -1,0 +1,346 @@
+---
+title: "Module 3: Sampling, Ethics, and Data Collection"
+subtitle: "LCA for Social Science Research"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    number_sections: true
+    theme: readable
+    highlight: tango
+    code_folding: show
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+# Purpose of This Module
+
+This module covers three design-level decisions that must be resolved before data are collected: sample size determination, sampling strategy, and ethical requirements. While these topics apply to survey research broadly, each has specific implications for LCA that researchers must account for.
+
+---
+
+# Sample Size
+
+## General Guidelines
+
+The methodological literature on LCA converges on a minimum recommendation of approximately 300 cases for most applications. This is a rough guideline, not a strict threshold. The required sample size depends on the interaction of several model-specific factors, and 300 may be inadequate for complex models or barely sufficient for simple ones.
+
+## Factors That Affect Required Sample Size
+
+### Number of Latent Classes
+
+Each additional class requires additional parameters to be estimated: one more set of item-response probabilities (one per indicator) and one more prevalence parameter. More parameters require more data to estimate stably. A two-class model with six binary indicators estimates 13 parameters. A five-class model with the same indicators estimates 34 parameters. The five-class model needs substantially more data.
+
+### Class Separation
+
+Well-separated classes — classes with highly distinct response profiles — are easier to detect and can be reliably identified with smaller samples. Poorly separated classes — classes whose response profiles overlap — require larger samples because the statistical signal distinguishing them from each other is weaker. If you suspect your classes will be poorly separated (for example, because the attitudinal differences you expect are subtle), plan for a larger sample.
+
+### Class Prevalence
+
+If one of your expected classes is small (e.g., comprising 5% of the population), you need a large overall sample to have enough members in that class for stable estimation. With $N = 300$ and a 5% class prevalence, you expect only 15 members in that class. With $N = 1{,}000$, you expect 50. Small classes are statistically fragile: the item-response probability estimates within them have wide confidence intervals, and the class may fail to emerge at all if the sample is too small.
+
+### Number and Type of Indicators
+
+More indicators provide more information for differentiating classes, which generally improves estimation. However, more indicators (especially polytomous ones) also increase the contingency table size, requiring more data to avoid sparseness. With many indicators, you need a larger sample to keep the $N/W$ ratio at an acceptable level.
+
+### Covariates
+
+If your analysis plan includes covariates (Module 10), the covariate model introduces additional parameters. Cases with missing data on covariates are typically dropped from the covariate analysis, effectively reducing your working sample size. Plan for this attrition.
+
+## Monte Carlo Simulation for Sample Size Planning
+
+For rigorous sample size planning, the gold standard is a Monte Carlo simulation study. You specify the hypothesized model (number of classes, item-response probabilities, class prevalences), simulate many datasets of a given sample size, estimate the LCA on each simulated dataset, and evaluate how often the correct number of classes is recovered, how accurately the parameters are estimated, and how often the model converges.
+
+By repeating this process across a range of sample sizes, you can identify the minimum $N$ at which your model performs acceptably.
+
+A simplified version of this procedure in R:
+
+```{r monte-carlo, eval=FALSE}
+library(poLCA)
+
+# Define the hypothesized model
+# 4 classes, 6 binary indicators
+true_probs <- list(
+  ITEM1 = matrix(c(0.85, 0.15, 0.10, 0.90, 0.80, 0.20, 0.15, 0.85,
+                    0.15, 0.85, 0.90, 0.10, 0.20, 0.80, 0.85, 0.15), 
+                  nrow = 4, byrow = TRUE),
+  # ... define for all 6 items
+  NULL
+)
+true_P <- c(0.30, 0.25, 0.25, 0.20)
+
+# Simulation parameters
+sample_sizes <- c(200, 400, 600, 800, 1000)
+n_simulations <- 100
+
+results <- data.frame()
+
+for (N in sample_sizes) {
+  correct_k <- 0
+  converged <- 0
+  
+  for (sim in 1:n_simulations) {
+    # Simulate data using poLCA.simdata
+    sim_data <- poLCA.simdata(N = N, probs = true_probs, P = true_P)
+    
+    # Estimate 3, 4, and 5 class models
+    # Compare BICs; record whether 4-class is selected
+    # ... (implementation details omitted for brevity)
+  }
+  
+  results <- rbind(results, data.frame(
+    N = N,
+    pct_correct_k = correct_k / n_simulations * 100,
+    pct_converged = converged / n_simulations * 100
+  ))
+}
+```
+
+This procedure is computationally intensive but provides the most defensible basis for sample size decisions. If you do not have the resources for a full simulation study, the 300-case guideline combined with qualitative assessment of your model's complexity is a reasonable fallback.
+
+---
+
+# How Indicator Quality Affects Recoverability
+
+The Monte Carlo simulation above addresses sample size. A complementary question is: for a fixed N, how does the *discriminating power* of the indicators affect whether the model recovers the true class structure? Two factors dominate: (1) the separation between class profiles (how different are the item-response probabilities across classes?) and (2) the number of indicators.
+
+The simulation below holds N = 500 constant and varies the average separation between class profiles from weak (Δp ≈ 0.15) to strong (Δp ≈ 0.50). For each condition it estimates 50 replicated 3-class models and records the BIC and entropy.
+
+```{r indicator-quality}
+library(poLCA)
+library(tidyverse)
+
+set.seed(99)
+
+run_condition <- function(separation, n_rep = 30, N = 500) {
+  # Base profile for 3 classes, 5 binary items (coded 1/2)
+  p_base <- matrix(c(
+    0.50, 0.50, 0.50, 0.50, 0.50,
+    0.50, 0.50, 0.50, 0.50, 0.50,
+    0.50, 0.50, 0.50, 0.50, 0.50
+  ), nrow = 3, byrow = TRUE)
+  p_base[1, ] <- p_base[1, ] + separation / 2
+  p_base[3, ] <- p_base[3, ] - separation / 2
+  p_base <- pmin(pmax(p_base, 0.05), 0.95)
+
+  f_sim <- cbind(V1, V2, V3, V4, V5) ~ 1
+  prev  <- c(1/3, 1/3, 1/3)
+
+  probs_list <- lapply(seq_len(ncol(p_base)), function(j) {
+    mat <- cbind(p_base[, j], 1 - p_base[, j])
+    mat
+  })
+  names(probs_list) <- paste0("V", 1:5)
+
+  entropies <- numeric(n_rep)
+  bics      <- numeric(n_rep)
+  for (r in seq_len(n_rep)) {
+    d <- poLCA.simdata(N = N, probs = probs_list, P = prev)$dat
+    colnames(d) <- paste0("V", 1:5)
+    m <- suppressWarnings(
+      poLCA(f_sim, d, nclass = 3, nrep = 10, verbose = FALSE)
+    )
+    post <- m$posterior
+    n    <- nrow(post)
+    K    <- ncol(post)
+    ent  <- 1 - (-sum(post * log(post + 1e-10))) / (n * log(K))
+    entropies[r] <- ent
+    bics[r]      <- m$bic
+  }
+  data.frame(separation = separation,
+             entropy    = mean(entropies),
+             bic        = mean(bics))
+}
+
+sep_levels <- c(0.10, 0.20, 0.30, 0.40, 0.50)
+quality_results <- do.call(rbind, lapply(sep_levels, run_condition))
+```
+
+```{r indicator-quality-plot, fig.height=4}
+ggplot(quality_results, aes(x = separation, y = entropy)) +
+  geom_line(color = "steelblue", linewidth = 1) +
+  geom_point(color = "steelblue", size = 3) +
+  scale_x_continuous(breaks = seq(0.1, 0.5, 0.1),
+                     labels = paste0("Δp = ", seq(0.1, 0.5, 0.1))) +
+  scale_y_continuous(limits = c(0, 1)) +
+  labs(
+    title = "Classification Quality vs. Indicator Separation (N = 500, K = 3)",
+    x = "Profile Separation (Δp per item)",
+    y = "Mean Entropy (across 30 replications)"
+  ) +
+  theme_minimal() +
+  geom_hline(yintercept = 0.80, linetype = "dashed", color = "firebrick", alpha = 0.6) +
+  annotate("text", x = 0.15, y = 0.82, label = "Entropy = 0.80 threshold",
+           color = "firebrick", size = 3.5)
+```
+
+## Summary Table: Sample Size Rules of Thumb
+
+| Scenario | Minimum N | Recommended N |
+|----------|----------|--------------|
+| Simple model (2–3 classes, 4–6 binary items, well-separated) | 200 | 300–500 |
+| Moderate model (3–4 classes, 6–10 items, moderate separation) | 300 | 500–800 |
+| Complex model (5+ classes, 10+ items, or small classes expected) | 500 | 800–1500 |
+| Model with covariates and expected missing data | Add 10–20% to above | Add 20–30% |
+
+These are approximate. They should not substitute for simulation-based planning when the research stakes are high.
+
+---
+
+# Sampling Strategy
+
+## Probability Sampling
+
+LCA, like any model-based statistical method, estimates population parameters from sample data. If the sample is not representative of the population, the estimated latent classes may not reflect the true population typology. Probability sampling — where every member of the target population has a known, non-zero probability of selection — provides the strongest basis for generalizability.
+
+Common probability sampling designs:
+
+- **Simple random sampling (SRS):** Every individual has an equal probability of selection. Ideal but often impractical for large populations.
+- **Stratified random sampling:** The population is divided into strata (e.g., by region, age group, or urbanicity), and a random sample is drawn within each stratum. This ensures adequate representation of subgroups that might otherwise be underrepresented.
+- **Cluster sampling:** Groups (clusters) such as schools, neighborhoods, or workplaces are randomly selected, and all individuals within selected clusters are surveyed. This is logistically efficient but introduces design effects that inflate standard errors.
+- **Multistage sampling:** Combines stratification and clustering (e.g., randomly select regions, then randomly select neighborhoods within regions, then randomly select households within neighborhoods). Most national surveys use some form of multistage design.
+
+## Non-Probability Sampling
+
+Convenience samples (e.g., university students, online panel volunteers, snowball samples) can be used for exploratory or pilot work but limit generalizability. If you use a convenience sample, you must be explicit about the scope conditions of your findings: the latent classes you identify may exist only in your particular sample and may not reflect population-level typologies.
+
+## Complex Survey Designs and LCA
+
+If your data come from a survey with a complex design (stratification, clustering, or unequal probability of selection), the standard errors and fit statistics produced by `poLCA` are incorrect. `poLCA` assumes simple random sampling and does not support survey weights or design corrections.
+
+Options for handling this:
+
+1. **Ignore the design.** If the design effects are small (e.g., the effective sample size is close to the nominal sample size), this may be acceptable as an approximation. Report this decision and its limitations.
+2. **Use Mplus.** Mplus supports LCA with complex survey data via the `TYPE = COMPLEX` option, which adjusts standard errors and fit statistics for stratification, clustering, and sampling weights.
+3. **Use weights as sensitivity analysis.** Run the LCA unweighted and then re-estimate using survey-weighted descriptive statistics to check whether the class profiles and prevalences change materially.
+
+---
+
+# Ethical Considerations
+
+## Institutional Review
+
+All human subjects research requires ethical review and approval before data collection begins. In universities, this is administered by an Institutional Review Board (IRB) or Ethics Committee. Your protocol submission should describe:
+
+- The purpose of the research and the specific hypotheses.
+- The survey instrument (including exact item wording).
+- The target population and sampling procedure.
+- How data will be collected, stored, and secured.
+- The informed consent procedure.
+- Any foreseeable risks to participants (e.g., discomfort from sensitive questions).
+- How participant anonymity or confidentiality will be maintained.
+
+LCA studies typically pose minimal risk to participants because they use survey data and do not involve experimental manipulation. However, if your survey includes sensitive topics (e.g., illegal behavior, stigmatized attitudes, mental health symptoms), additional safeguards may be required.
+
+## Informed Consent
+
+Participants must be informed, before they begin the survey, about:
+
+- The purpose of the study (in general terms — you do not need to explain LCA).
+- What participation involves (completing a survey of approximately X minutes).
+- That participation is voluntary and can be terminated at any time.
+- How their data will be used, stored, and protected.
+- Who to contact with questions or concerns.
+
+For online surveys, consent is typically obtained through an information page that participants must read and acknowledge before proceeding to the survey items.
+
+## Privacy and Confidentiality in LCA
+
+LCA assigns individuals to latent classes based on their response patterns. In the analysis output, each individual receives a class assignment and a vector of posterior probabilities. If your dataset contains identifying information (names, email addresses, IP addresses), the class assignment becomes linked to an identifiable individual.
+
+This matters particularly if the latent classes capture sensitive characteristics. If one of your classes is characterized by high endorsement of socially undesirable attitudes (e.g., racial prejudice, support for political violence), and you publish item-response probabilities alongside class prevalences, an adversary with access to the raw data could potentially identify which individuals belong to that class.
+
+To mitigate this:
+
+- Remove all identifying information from the analytic dataset.
+- Use only anonymous identifiers (e.g., sequential ID numbers).
+- Do not publish individual-level posterior probabilities or class assignments.
+- Store raw data and analysis output securely, with access restricted to the research team.
+
+## Secondary Data
+
+If you are using an existing public-use dataset (e.g., the European Social Survey, the General Social Survey, ANES), ethical review may not be required because the data were already collected under their own ethical protocols and are anonymized. Check your institution's policies — many IRBs exempt analysis of de-identified public data from full review but still require notification.
+
+---
+
+# Data Collection Modes
+
+## Mode Effects
+
+The mode of survey administration — online self-administered, telephone interview, face-to-face interview, paper-and-pencil — can systematically affect response patterns. Key mode effects include:
+
+- **Social desirability bias:** In interviewer-administered modes (telephone, face-to-face), respondents may overreport socially desirable attitudes (e.g., tolerance, civic engagement) and underreport undesirable ones (e.g., prejudice, risk behavior). Self-administered modes (online, paper) generally produce less social desirability bias because there is no interviewer to perform for.
+
+- **Satisficing:** In self-administered online surveys, respondents may engage in satisficing — selecting the first adequate response rather than carefully considering all options. This can manifest as straight-lining (selecting the same response for all items), primacy effects (favoring earlier response options), or random responding. Satisficing introduces noise into the response patterns and may produce spurious latent classes.
+
+- **Item nonresponse:** Missing data rates tend to be higher in self-administered modes than in interviewer-administered modes, because interviewers can probe for responses and encourage completion.
+
+## Implications for LCA
+
+If your data were collected using a mixed-mode design (e.g., some respondents completed the survey online and others by telephone), mode effects could introduce systematic differences in response patterns that are confounded with true latent class membership. A class that appears in mixed-mode data might reflect a group of respondents who responded online (and therefore showed less social desirability bias) rather than a genuinely distinct attitudinal subtype.
+
+If you suspect mode effects are substantial:
+
+- Include survey mode as a covariate in your covariate model to test whether mode predicts class membership.
+- Or, if you believe mode fundamentally alters how respondents interpret the items, treat mode as a grouping variable in a multiple-group LCA (requires Mplus) to test measurement invariance across modes.
+
+## Data Quality Screening
+
+Before analysis, screen your data for response quality issues:
+
+- **Straight-lining:** Respondents who give the same answer to every item. These individuals contribute no information to class differentiation and can distort the results. Consider removing respondents who straight-line across all indicator items.
+- **Speeding:** Respondents who complete the survey in implausibly short times are unlikely to have read the items carefully. If timestamps are available, flag and consider removing respondents below a reasonable time threshold (e.g., less than 1/3 of the median completion time).
+- **Inconsistency checks:** If your survey includes attention checks or trap questions, remove respondents who fail them.
+
+---
+
+# Worked Example: Sampling Design
+
+For our political belief systems study:
+
+> **Population:** Adult residents (18+) of a national population.
+>
+> **Sampling:** Stratified random sample drawn from the national population register, stratified by region (4 regions) and urbanicity (urban / rural). Within each stratum, simple random sampling is applied.
+>
+> **Target sample size:** $N = 800$. This provides a comfortable margin for a 4-class model with six binary indicators ($N/W = 800/64 = 12.5$) and allows for up to 10% attrition from missing data on covariates while retaining at least 720 cases for the covariate model.
+>
+> **Mode:** Online self-administered questionnaire, distributed via email invitation with a unique survey link. Estimated completion time: 12 minutes.
+>
+> **Ethics:** Protocol reviewed and approved by [institution] IRB. Informed consent obtained via an information page displayed before the first survey item. Data stored in encrypted format on a university-managed server. All analyses conducted on a de-identified dataset.
+>
+> **Data quality:** Straight-liners (identical response to all six indicator items) and speeders (completion time below 3 minutes) will be flagged and excluded from the analytic sample. An attention check item ("Please select 'Agree' for this item") is embedded in the survey.
+
+---
+
+# Summary
+
+Before proceeding to Module 4, verify the following:
+
+- Your target sample size is adequate for the number of classes, indicators, and class prevalences you expect.
+- Your sampling strategy is appropriate for the generalizability claims you plan to make.
+- Ethical approvals are in place (or exemption confirmed for secondary data).
+- You have a plan for data quality screening (straight-lining, speeding, attention checks).
+- If using a complex survey design, you have identified how you will handle design effects in the LCA.
+- If using a mixed-mode design, you have a plan for assessing or controlling for mode effects.
+
+---
+
+# References
+
+Collins, L. M., & Lanza, S. T. (2010). *Latent class and latent transition analysis: With applications in the social, behavioral, and health sciences.* Wiley.
+
+Weller, B. E., Bowen, N. K., & Faubert, S. J. (2020). Latent class analysis: A guide to best practice. *Journal of Black Psychology, 46*(4), 287–311.
+
+Nylund-Gibson, K., & Choi, A. Y. (2018). Ten frequently asked questions about latent class analysis. *Translational Issues in Psychological Science, 4*(4), 440–461.
+
+---
+
+```{r nav-footer, echo=FALSE, results='asis'}
+cat('<div style="margin-top:3em; padding-top:1em; border-top:1px solid #ddd; font-size:0.9em; color:#555;">
+<a href="index.html">&#8617; Course Index</a>
+</div>')
+```

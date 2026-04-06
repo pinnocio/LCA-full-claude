@@ -1,0 +1,418 @@
+---
+title: "Module 6: Model Enumeration and Selection"
+subtitle: "LCA for Social Science Research"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    number_sections: true
+    theme: readable
+    highlight: tango
+    code_folding: show
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE, warning = FALSE, message = FALSE,
+  fig.width = 8, fig.height = 5, fig.align = "center"
+)
+```
+
+# Purpose of This Module
+
+Determining the optimal number of latent classes is the most consequential — and most contested — methodological decision in LCA. There is no single definitive test. The decision requires triangulating multiple statistical criteria, evaluating parsimony, and applying theoretical judgment. This module provides the full toolkit and a decision framework for navigating this process.
+
+> **Prerequisites:** This module loads `lca_prepared_data.RData` and `lca_estimated_models.RData`, saved by Modules 4 and 5 respectively. Render Modules 4 and 5 before this module.
+
+```{r load}
+load("lca_prepared_data.RData")
+load("lca_estimated_models.RData")
+library(poLCA)
+library(tidyverse)
+library(knitr)
+library(kableExtra)
+```
+
+---
+
+# Absolute Fit: Why It Usually Fails in Social Science
+
+## The Likelihood-Ratio G² Statistic
+
+The $G^2$ statistic compares the model-implied cell frequencies to the observed cell frequencies in the full contingency table. Under the null hypothesis that the model fits perfectly, $G^2$ follows a chi-square distribution with degrees of freedom equal to the number of unique data points minus the number of estimated parameters.
+
+$$G^2 = 2 \sum_{w=1}^{W} O_w \ln\left(\frac{O_w}{E_w}\right)$$
+
+where $O_w$ is the observed count and $E_w$ is the expected count in cell $w$, and $W$ is the total number of cells.
+
+If $G^2$ is non-significant ($p > .05$), the model's predicted frequencies are not significantly different from the observed frequencies — the model fits.
+
+## Why This Breaks Down
+
+The chi-square approximation for $G^2$ is accurate only when expected cell counts are reasonably large (typically above 5). In social science LCA, where you cross-tabulate multiple survey items, the contingency table is almost always sparse. With six binary items, there are 64 cells; with six 5-point Likert items, 15,625 cells. Most cells will have expected counts near zero. Under these conditions:
+
+- The chi-square approximation is invalid.
+- The $p$-values are inaccurate and cannot be trusted.
+- The $G^2$ test almost always rejects the model, regardless of how many classes you add, because no finite mixture model can perfectly reproduce a highly sparse table.
+- Attempting to achieve absolute fit forces the extraction of an absurdly large number of classes that represent trivial, uninterpretable response pattern variations.
+
+**Practical recommendation:** Report $G^2$ and degrees of freedom in your fit table (reviewers expect to see them), but do not use them as the basis for model selection. Use relative fit criteria instead.
+
+---
+
+# Relative Fit Criteria: Information Criteria
+
+## The Logic of Information Criteria
+
+Information criteria evaluate models on two dimensions simultaneously: goodness of fit (how well the model reproduces the data) and parsimony (how many parameters the model uses). A more complex model will always fit at least as well as a simpler one — it has more parameters to explain the data. Information criteria penalize complexity, so that adding parameters is only rewarded if the improvement in fit exceeds the penalty.
+
+All information criteria follow the general form:
+
+$$IC = -2 \cdot LL + \text{penalty}(k, N)$$
+
+where $LL$ is the maximized log-likelihood and $k$ is the number of estimated parameters. Lower values indicate better models. The criteria differ only in how they define the penalty.
+
+## Bayesian Information Criterion (BIC)
+
+$$BIC = -2 \cdot LL + k \cdot \ln(N)$$
+
+The penalty is proportional to $k \cdot \ln(N)$. Because $\ln(N)$ is typically larger than 2 (for $N > 7$), the BIC penalizes complexity more heavily than the AIC. This makes the BIC more conservative — it tends to favor simpler models.
+
+The BIC is widely considered the most reliable information criterion for LCA. Simulation studies consistently show that the BIC correctly identifies the true number of classes more often than the AIC, especially in moderate to large samples. It is the single most important fit statistic in your model selection toolkit, and it should always be reported.
+
+## Akaike Information Criterion (AIC)
+
+$$AIC = -2 \cdot LL + 2k$$
+
+The penalty is a flat $2k$, independent of sample size. The AIC penalizes complexity less than the BIC and therefore tends to favor more complex models. In LCA applications, the AIC frequently overestimates the number of classes — it selects models with more classes than actually exist in the population.
+
+**Use the AIC as a secondary criterion.** If the AIC and BIC agree, your decision is straightforward. If the AIC favors more classes than the BIC, the BIC's recommendation is generally more defensible.
+
+## Sample-Size Adjusted BIC (SABIC)
+
+$$SABIC = -2 \cdot LL + k \cdot \ln\left(\frac{N + 2}{24}\right)$$
+
+The penalty is an adjusted version of the BIC penalty that accounts for sample size more sensitively. The SABIC typically falls between the AIC and BIC in terms of complexity preference. Some simulation studies suggest it performs comparably to the BIC.
+
+## Consistent AIC (CAIC)
+
+$$CAIC = -2 \cdot LL + k \cdot (\ln(N) + 1)$$
+
+The CAIC adds an extra $+1$ to the BIC's penalty, making it the most conservative criterion. It may underestimate the number of classes.
+
+## Which Criterion to Trust
+
+The consensus in the methodological literature, supported by simulation evidence, is:
+
+1. **BIC** is the primary criterion. Give it the most weight.
+2. **AIC** and **SABIC** are supplementary. Report them, but do not let them override the BIC unless there is strong theoretical justification.
+3. **CAIC** is rarely used as the primary criterion in social science LCA.
+
+```{r fit-table}
+# Extract fit statistics from all models
+fit_stats <- data.frame(
+  Classes = 1:length(lca_models),
+  LL = sapply(lca_models, function(m) m$llik),
+  npar = sapply(lca_models, function(m) m$npar),
+  df = sapply(lca_models, function(m) m$resid.df),
+  G2 = sapply(lca_models, function(m) m$Gsq),
+  AIC = sapply(lca_models, function(m) m$aic),
+  BIC = sapply(lca_models, function(m) m$bic)
+)
+
+# Calculate SABIC and CAIC manually
+n <- nrow(sim_data)
+fit_stats$SABIC <- -2 * fit_stats$LL + fit_stats$npar * log((n + 2) / 24)
+fit_stats$CAIC <- -2 * fit_stats$LL + fit_stats$npar * (log(n) + 1)
+
+kable(fit_stats, digits = 2,
+      caption = "Model Fit Statistics: 1-Class Through 6-Class Models") %>%
+  kable_styling(full_width = FALSE) %>%
+  row_spec(which.min(fit_stats$BIC), bold = TRUE, background = "#e8f4e8")
+```
+
+The highlighted row indicates the model with the lowest BIC. This is the statistically preferred model under the BIC criterion.
+
+## How to Read This Table
+
+If you have never worked with an LCA fit table before, here is how to read it step by step:
+
+1. **Start with the BIC column.** Scan down the column and find the smallest value. The row containing that value is the BIC-preferred model. In most social science LCA applications, this is your default selection.
+
+2. **Check the AIC column.** Find its smallest value. If the AIC minimum is in the same row as the BIC minimum, the two criteria agree and your decision is straightforward. If the AIC minimum is in a higher row (more classes), it is favoring a more complex model. This is common — the AIC tends to overextract classes. Give the BIC priority.
+
+3. **Look at the log-likelihood column.** This value should strictly increase (become less negative) as you add classes. If it does not, something went wrong in the estimation — likely a local maximum problem. Re-estimate that model with more random starts.
+
+4. **Look at the npar column.** This is the number of freely estimated parameters. It should increase with each additional class. The difference between adjacent rows tells you how many new parameters the extra class introduces.
+
+5. **Look at the entropy column (if present).** Remember: do NOT use entropy to select the number of classes. Entropy is a diagnostic for the model you have already selected. Ignore it during the comparison phase and return to it in Module 7.
+
+6. **Compare adjacent rows.** How much does the BIC drop when you move from $k$ to $k+1$ classes? A large drop means the additional class adds substantial fit improvement. A small drop (or an increase) means the additional class is not worth the added complexity.
+
+---
+
+# Elbow Plots
+
+## Construction
+
+An elbow plot graphs the information criteria against the number of classes. The optimal model often appears at an "elbow" — the point where the curve's slope changes markedly, indicating that adding more classes yields diminishing improvements in fit.
+
+```{r elbow-plots, fig.height=8}
+# Reshape for plotting
+fit_long <- fit_stats %>%
+  select(Classes, AIC, BIC, SABIC) %>%
+  pivot_longer(cols = -Classes, names_to = "Criterion", values_to = "Value")
+
+ggplot(fit_long, aes(x = Classes, y = Value, color = Criterion)) +
+  geom_line(linewidth = 1.2) +
+  geom_point(size = 3) +
+  scale_x_continuous(breaks = 1:max(fit_stats$Classes)) +
+  facet_wrap(~ Criterion, scales = "free_y", ncol = 1) +
+  labs(title = "Elbow Plots: Information Criteria by Number of Classes",
+       x = "Number of Latent Classes", y = "Value (lower = better)") +
+  theme_minimal() +
+  theme(legend.position = "none",
+        strip.text = element_text(face = "bold", size = 12))
+```
+
+## Reading the Elbow Plot
+
+Look for the point where the curve transitions from steep decline to relative flatness. This transition indicates that the models are entering a region of diminishing returns — each additional class improves fit by less and less. The model at or just before this transition is typically the best balance of fit and parsimony.
+
+If the curve declines steadily without a clear elbow, the data may not have a clearly dominant solution. In this case, lean on parsimony and theoretical interpretability.
+
+---
+
+# Likelihood Ratio Tests
+
+## The Problem with Standard LR Tests
+
+In principle, you can compare nested models (e.g., 3-class vs. 4-class) using a likelihood ratio test:
+
+$$\Lambda = -2 \cdot (LL_{k-1} - LL_k)$$
+
+Under standard regularity conditions, $\Lambda$ follows a chi-square distribution. However, the null hypothesis in this case places a class on the boundary of the parameter space (the extra class has zero prevalence), which violates these regularity conditions. The chi-square approximation is invalid, and the $p$-value cannot be trusted.
+
+## Bootstrapped Likelihood Ratio Test (BLRT)
+
+The BLRT circumvents this problem by using parametric bootstrapping to generate the null distribution empirically rather than assuming a chi-square form. The procedure:
+
+1. Estimate the $k-1$ class model on the real data.
+2. Simulate $B$ bootstrap datasets from the fitted $k-1$ class model.
+3. For each bootstrap dataset, estimate both the $k-1$ and $k$ class models, and compute the likelihood ratio.
+4. The distribution of these $B$ bootstrap likelihood ratios is the null distribution.
+5. Compare the observed likelihood ratio to this null distribution. If the observed value exceeds (say) 95% of the bootstrap values, the $k$-class model provides a significant improvement.
+
+The BLRT is considered the most reliable formal test for comparing nested LCA models. However, it is computationally expensive and is not implemented in `poLCA`. If you need the BLRT, use Mplus, the `tidyLPA` package (for LPA), or implement it manually.
+
+```{r blrt-demo}
+blrt <- function(data, formula, k, B = 50, seed = 42) {
+  set.seed(seed)
+  fit_null <- poLCA(formula, data, nclass = k - 1, nrep = 20, verbose = FALSE)
+  fit_alt  <- poLCA(formula, data, nclass = k,     nrep = 20, verbose = FALSE)
+  obs_lr   <- -2 * (fit_null$llik - fit_alt$llik)
+
+  item_names_boot <- names(fit_null$probs)
+  boot_form <- as.formula(
+    paste0("cbind(", paste(item_names_boot, collapse = ","), ") ~ 1")
+  )
+
+  boot_lr <- numeric(B)
+  for (b in seq_len(B)) {
+    bd  <- poLCA.simdata(N = nrow(data), probs = fit_null$probs, P = fit_null$P)$dat
+    colnames(bd) <- item_names_boot
+    f0  <- poLCA(boot_form, bd, nclass = k - 1, nrep = 10, verbose = FALSE)
+    f1  <- poLCA(boot_form, bd, nclass = k,     nrep = 10, verbose = FALSE)
+    boot_lr[b] <- -2 * (f0$llik - f1$llik)
+  }
+
+  p_value <- mean(boot_lr >= obs_lr)
+  list(k_null = k - 1, k_alt = k,
+       obs_lr = round(obs_lr, 2), p_value = round(p_value, 3),
+       boot_lr = boot_lr)
+}
+
+# B = 50 for illustration; use B = 500+ in practice
+cat("BLRT: 2 vs 3 classes (B = 50) ...\n")
+blrt_2v3 <- blrt(sim_data, f_lca, k = 3, B = 50)
+cat(sprintf("  LR = %.2f  |  bootstrap p = %.3f\n",
+            blrt_2v3$obs_lr, blrt_2v3$p_value))
+
+cat("BLRT: 3 vs 4 classes (B = 50) ...\n")
+blrt_3v4 <- blrt(sim_data, f_lca, k = 4, B = 50)
+cat(sprintf("  LR = %.2f  |  bootstrap p = %.3f\n",
+            blrt_3v4$obs_lr, blrt_3v4$p_value))
+```
+
+```{r blrt-hist, fig.height=4}
+data.frame(boot_lr = blrt_2v3$boot_lr) %>%
+  ggplot(aes(x = boot_lr)) +
+  geom_histogram(bins = 20, fill = "steelblue", color = "white", alpha = 0.8) +
+  geom_vline(xintercept = blrt_2v3$obs_lr, color = "firebrick", linewidth = 1.2,
+             linetype = "dashed") +
+  labs(title = "BLRT Bootstrap Null Distribution: 2 vs 3 Classes",
+       subtitle = paste0("Observed LR = ", blrt_2v3$obs_lr,
+                         "  |  p = ", blrt_2v3$p_value),
+       x = "Bootstrap Likelihood Ratio", y = "Count") +
+  theme_minimal()
+```
+
+## Vuong-Lo-Mendell-Rubin Adjusted LRT (VLMR-LRT)
+
+An analytic approximation to the BLRT that adjusts the likelihood ratio statistic to account for the boundary condition. Available in Mplus but not in `poLCA`. Generally considered less reliable than the BLRT but computationally cheaper.
+
+---
+
+# Parsimony and Theoretical Interpretability
+
+## The Parsimony Principle
+
+Statistical criteria should never override substantive judgment. The principle of parsimony dictates that you select the simplest model that adequately accounts for the data. A model with fewer classes is preferred unless additional classes provide genuinely new, theoretically meaningful information.
+
+## Evaluating Interpretability
+
+After narrowing the candidates using fit statistics, examine the item-response probability profiles of the top 2–3 competing models. For each model, ask:
+
+1. **Does each class represent a substantively distinct profile?** If two classes have nearly identical response patterns, the more complex model is splitting a single type into two barely distinguishable subgroups. The simpler model is preferred.
+
+2. **Does each class make theoretical sense?** Can you plausibly interpret each class as a type that your theoretical framework predicts or can accommodate? If a class has an incoherent or uninterpretable profile — a random-looking pattern with no theoretical anchor — it may be fitting noise rather than signal.
+
+3. **Does the additional class add new information?** When moving from a $k$-class to a $(k+1)$-class model, identify which class is "new." Is it a genuinely novel type, or is it a minor variant of an existing class? If the new class is simply a slightly more extreme version of an existing class, parsimony favors the simpler model.
+
+```{r compare-profiles}
+# Compare item-response probability profiles for 3, 4, and 5 class models
+
+compare_models <- function(model, model_name, items) {
+  nclass <- length(model$P)
+  prob_mat <- matrix(NA, nrow = nclass, ncol = length(items))
+  for (j in seq_along(items)) {
+    prob_mat[, j] <- model$probs[[items[j]]][, 1]
+  }
+  colnames(prob_mat) <- items
+  rownames(prob_mat) <- paste("Class", 1:nclass)
+  
+  cat("\n===", model_name, "===\n")
+  cat("Prevalences:", round(model$P, 3), "\n")
+  print(round(prob_mat, 3))
+}
+
+compare_models(lca_models[[3]], "3-Class Model", item_names)
+compare_models(lca_models[[4]], "4-Class Model", item_names)
+compare_models(lca_models[[5]], "5-Class Model", item_names)
+```
+
+---
+
+# Class Size Considerations
+
+## Minimum Class Size
+
+Examine the estimated prevalence of each class. Very small classes raise two concerns:
+
+1. **Statistical fragility:** With few members, the item-response probabilities within the class are estimated imprecisely (wide confidence intervals). The class may be unstable — it might not replicate in a different sample.
+
+2. **Substantive meaning:** A class comprising 2% of the sample may represent genuine but rare population subtype, or it may be fitting a handful of outlier response patterns. Without strong theoretical justification, such small classes are suspect.
+
+Historical guidelines suggested a minimum of 50 cases or 5% of the sample per class. Contemporary practice is more flexible: small classes are acceptable if they are theoretically motivated, supported by fit statistics, and produce interpretable profiles. But you must acknowledge the limitation and note that the class requires replication.
+
+```{r class-sizes}
+for (k in 3:5) {
+  cat(sprintf("\n%d-class model:\n", k))
+  prev <- lca_models[[k]]$P
+  for (c in 1:k) {
+    cat(sprintf("  Class %d: %.1f%% (n ≈ %d)%s\n", 
+                c, prev[c] * 100, round(prev[c] * n),
+                ifelse(prev[c] * n < 50, " *** SMALL CLASS ***", "")))
+  }
+}
+```
+
+---
+
+# Decision Framework: Putting It All Together
+
+## Step-by-Step Procedure
+
+1. **Extract fit statistics** for all models (1-class through K-class). Present them in a table.
+
+2. **Identify the BIC-optimal model.** This is your default selection.
+
+3. **Check AIC and SABIC.** If they agree with the BIC, proceed. If the AIC favors more classes, do not automatically follow it — check whether the additional classes add interpretable information.
+
+4. **Create an elbow plot.** Confirm visually that the BIC-optimal model sits at or near the elbow.
+
+5. **Examine the profiles of the top 2–3 candidates** (the BIC-optimal model plus adjacent alternatives). Evaluate whether additional classes add substantive information or merely subdivide existing classes.
+
+6. **Check class sizes.** Flag any class below 5% of the sample.
+
+7. **Apply theoretical judgment.** Does the selected model align with your theoretical predictions? If your theory strongly predicts 3 classes but the BIC favors 4, examine whether the 4th class is theoretically interpretable. If it is, the BIC-optimal model is preferred. If it is not, consider whether the 3-class model is adequately supported by the fit statistics.
+
+8. **Report your reasoning transparently.** In your methods section, present all fit statistics, state which criteria you prioritized and why, and explain the substantive reasoning that supported your final decision.
+
+## When Criteria Disagree
+
+| Scenario | Recommendation |
+|----------|---------------|
+| BIC, AIC, and SABIC all agree | Select that model |
+| BIC and SABIC agree; AIC favors more classes | Follow BIC/SABIC |
+| BIC favors fewer classes than AIC and SABIC | Check profiles of both models; lean toward BIC unless the additional class is theoretically compelling |
+| All criteria continue declining without a minimum | Theoretical interpretability becomes the primary criterion; select the simplest model that captures all substantively distinct types |
+| Fit statistics and theory conflict strongly | Report both solutions and discuss the tradeoff transparently |
+
+---
+
+# Saving the Selected Model
+
+```{r select-model}
+# Identify the BIC-optimal model
+best_k <- which.min(fit_stats$BIC)
+cat("BIC-optimal model:", best_k, "classes\n")
+cat("BIC:", fit_stats$BIC[best_k], "\n")
+
+# Store the selected model
+best_model <- lca_models[[best_k]]
+
+# Save for use in subsequent modules
+save(best_model, fit_stats, file = "lca_selected_model.RData")
+cat("Selected model saved to lca_selected_model.RData\n")
+```
+
+---
+
+# Summary
+
+After completing this module, you should be able to:
+
+1. Explain why absolute fit ($G^2$) is unreliable for LCA with sparse social science data.
+2. Calculate, interpret, and compare the BIC, AIC, SABIC, and CAIC.
+3. Construct and read elbow plots.
+4. Understand the BLRT and VLMR-LRT, even if you cannot compute them in `poLCA`.
+5. Apply parsimony and theoretical judgment when statistical criteria disagree.
+6. Evaluate class sizes and flag statistically fragile classes.
+7. Document and defend your model selection decision.
+
+Proceed to **Module 7: Classification Quality Assessment** to evaluate how accurately your selected model assigns individuals to classes.
+
+---
+
+# References
+
+Bonikowski, B. (2021). Mapping culture with latent class analysis. *Nations and Nationalism, 27*(4), 926–941.
+
+Collins, L. M., & Lanza, S. T. (2010). *Latent class and latent transition analysis.* Wiley.
+
+Eshima, N. (2022). *An introduction to latent class analysis.* Springer.
+
+Nylund, K. L., Asparouhov, T., & Muthén, B. O. (2007). Deciding on the number of classes in latent class analysis and growth mixture modeling. *Structural Equation Modeling, 14*(4), 535–569.
+
+Weller, B. E., Bowen, N. K., & Faubert, S. J. (2020). Latent class analysis: A guide to best practice. *Journal of Black Psychology, 46*(4), 287–311.
+
+---
+
+```{r nav-footer, echo=FALSE, results='asis'}
+cat('<div style="margin-top:3em; padding-top:1em; border-top:1px solid #ddd; font-size:0.9em; color:#555;">
+<a href="index.html">&#8617; Course Index</a>
+</div>')
+```

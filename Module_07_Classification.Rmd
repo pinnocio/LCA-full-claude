@@ -1,0 +1,443 @@
+---
+title: "Module 7: Classification Quality Assessment"
+subtitle: "LCA for Social Science Research"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    number_sections: true
+    theme: readable
+    highlight: tango
+    code_folding: show
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE, warning = FALSE, message = FALSE,
+  fig.width = 8, fig.height = 5, fig.align = "center"
+)
+```
+
+# Purpose of This Module
+
+Once you have selected a candidate model using fit criteria and theoretical judgment (Module 6), you must evaluate how accurately that model classifies individuals into the identified classes. This module covers the diagnostic tools that measure classification precision: posterior probabilities, entropy, the Average Latent Class Posterior Probability (ALCPP) matrix, and the Odds of Correct Classification (OCC).
+
+These diagnostics answer a fundamentally different question than fit statistics. Fit statistics ask: "Is this the right number of classes?" Classification diagnostics ask: "Given this number of classes, how confidently can we assign individuals?" A model can be the best-fitting model in the sequence and still have poor classification quality — meaning the classes exist but are so overlapping that individuals cannot be placed into them with certainty.
+
+Why this matters: if classification quality is low and you proceed to assign individuals to their most probable class (a "classify-analyze" approach), the resulting class variable is contaminated by measurement error. Subsequent analyses — comparisons of classes on outcomes, regression of class membership on covariates — will be biased. The diagnostics in this module tell you how much to trust the class assignments and whether additional precautions (such as the three-step approach in Module 10) are necessary.
+
+> **Prerequisites:** This module loads objects from Modules 4, 5, and 6. Render those modules first.
+
+```{r load}
+load("lca_prepared_data.RData")
+load("lca_selected_model.RData")
+load("lca_estimated_models.RData")
+library(poLCA)
+library(tidyverse)
+library(knitr)
+library(kableExtra)
+```
+
+---
+
+# Homogeneity and Latent Class Separation
+
+## Homogeneity
+
+Homogeneity describes the extent to which individuals within a class share the same response pattern. It is assessed by examining the item-response probabilities within each class.
+
+When item-response probabilities are near 0 or 1, most class members give the same response to that item — the class is internally consistent on that item. When probabilities are near 0.5, the item provides no diagnostic information for that class — members are equally likely to agree or disagree.
+
+Perfect homogeneity (all probabilities at exactly 0 or 1) means every member of the class has an identical response pattern. This is unrealistic in empirical data but serves as an ideal benchmark. The closer your probabilities are to the boundaries, the better your homogeneity.
+
+## Latent Class Separation
+
+Separation describes how distinct the classes are from one another. Even if each class is internally homogeneous, the classes may share similar profiles. When separation is high, a response pattern that characterizes one class has a very low probability of occurring in any other class — the classes occupy non-overlapping regions of the response space.
+
+## The Relationship Between the Two
+
+High separation implies high homogeneity, but high homogeneity does not guarantee high separation. Two classes could both have item-response probabilities near 0 and 1, but if their profiles are nearly identical (e.g., both classes have the same high-probability and low-probability items), they are homogeneous but not separated. The model would struggle to distinguish between them.
+
+Good classification requires both properties.
+
+## Examining Item-Response Probabilities for Homogeneity and Separation
+
+```{r item-probs}
+prob_table <- matrix(NA, nrow = length(best_model$P), ncol = length(item_names))
+for (j in seq_along(item_names)) {
+  prob_table[, j] <- best_model$probs[[item_names[j]]][, 1]
+}
+colnames(prob_table) <- item_names
+rownames(prob_table) <- paste("Class", 1:length(best_model$P))
+
+kable(round(prob_table, 3), 
+      caption = "Item-Response Probabilities: P(Agree) by Class") %>%
+  kable_styling(full_width = FALSE)
+```
+
+**Evaluating homogeneity:** For each class (row), how many probabilities are close to 0 or 1? If most are above 0.8 or below 0.2, homogeneity is high. If many are in the 0.3–0.7 range, those items are not diagnostic for that class.
+
+**Evaluating separation:** For each item (column), how different are the probabilities across classes? If one class has 0.90 and another has 0.10 on the same item, that item strongly discriminates between those classes. If all classes have probabilities between 0.40 and 0.60 on an item, that item provides no discriminatory power.
+
+```{r separation-visual, fig.height=6}
+# Visual assessment: profile plot colored by deviation from 0.5
+prob_df <- as.data.frame(prob_table)
+prob_df$Class <- factor(paste("Class", 1:nrow(prob_df)))
+
+prob_long <- prob_df %>%
+  pivot_longer(-Class, names_to = "Item", values_to = "Probability") %>%
+  mutate(Item = factor(Item, levels = item_names))
+
+ggplot(prob_long, aes(x = Item, y = Probability, color = Class, group = Class)) +
+  geom_line(linewidth = 1.2) +
+  geom_point(size = 3) +
+  geom_hline(yintercept = 0.5, linetype = "dashed", color = "grey50") +
+  scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.2)) +
+  annotate("rect", xmin = -Inf, xmax = Inf, ymin = 0.3, ymax = 0.7,
+           alpha = 0.1, fill = "red") +
+  labs(title = "Item-Response Probability Profiles",
+       subtitle = "Shaded zone (0.3-0.7) indicates poor diagnostic value",
+       x = "Item", y = "P(Agree)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "bottom")
+```
+
+Items with probabilities in the shaded zone (0.3 to 0.7) for a given class contribute little to classifying members of that class. Items with probabilities outside the shaded zone in different directions for different classes are the primary drivers of class separation.
+
+---
+
+# Posterior Probabilities
+
+## What They Represent
+
+For each individual $i$ and each class $c$, the posterior probability $P(C = c \mid \mathbf{y}_i)$ is the probability that individual $i$ belongs to class $c$, given their observed response pattern. These are computed via Bayes' theorem during the E-step of the EM algorithm (see Module 5).
+
+For each individual, the posterior probabilities across all classes sum to 1.0. In an ideal model, each individual's posteriors would be "peaked" — near 1.0 for one class and near 0.0 for all others, indicating unambiguous classification. In a poor model, posteriors would be "flat" — roughly equal across classes, indicating that the model cannot determine which class the individual belongs to.
+
+```{r posteriors}
+posterior <- best_model$posterior
+assigned_class <- best_model$predclass
+
+# Display posteriors for a random sample of 15 individuals
+set.seed(77)
+sample_idx <- sort(sample(1:nrow(posterior), 15))
+sample_post <- data.frame(
+  ID = sim_data$id[sample_idx],
+  posterior[sample_idx, ],
+  Assigned = assigned_class[sample_idx],
+  Max_Prob = apply(posterior[sample_idx, ], 1, max)
+)
+names(sample_post)[2:(length(best_model$P) + 1)] <- paste0("P(Class ", 1:length(best_model$P), ")")
+
+kable(round(sample_post, 3), 
+      caption = "Posterior Probabilities for 15 Sampled Individuals") %>%
+  kable_styling(full_width = FALSE)
+```
+
+**Reading this table:** Each row is an individual. The $P(\text{Class } c)$ columns show the posterior probability of belonging to each class. The "Assigned" column shows the class with the highest posterior probability. The "Max_Prob" column shows the maximum posterior probability — values near 1.0 indicate confident classification.
+
+## Distribution of Maximum Posterior Probabilities
+
+A useful diagnostic is to examine the distribution of the maximum posterior probability across all individuals. This shows how certain the model is about its classifications at the individual level.
+
+```{r max-post-dist, fig.height=5}
+max_post <- apply(posterior, 1, max)
+
+ggplot(data.frame(max_post = max_post), aes(x = max_post)) +
+  geom_histogram(bins = 30, fill = "steelblue", color = "white", alpha = 0.8) +
+  geom_vline(xintercept = 0.8, linetype = "dashed", color = "red") +
+  geom_vline(xintercept = 0.9, linetype = "dashed", color = "darkgreen") +
+  labs(title = "Distribution of Maximum Posterior Probabilities",
+       subtitle = "Red line: 0.80 threshold | Green line: 0.90 threshold",
+       x = "Maximum Posterior Probability", y = "Count") +
+  theme_minimal()
+
+cat("Proportion of individuals with max posterior > 0.90:", 
+    round(mean(max_post > 0.90), 3), "\n")
+cat("Proportion of individuals with max posterior > 0.80:", 
+    round(mean(max_post > 0.80), 3), "\n")
+cat("Proportion of individuals with max posterior < 0.70:", 
+    round(mean(max_post < 0.70), 3), "\n")
+```
+
+Individuals with maximum posterior probabilities below 0.70 have ambiguous class membership — the model is substantially uncertain about where they belong. A large proportion of such individuals signals that the classes are not well-separated and that downstream analyses using class assignments will be biased.
+
+---
+
+# Entropy
+
+## Definition and Computation
+
+Entropy quantifies overall classification certainty. `poLCA` does not compute entropy directly, so you must calculate it manually from the posterior probability matrix.
+
+The relative entropy statistic (sometimes called "entropy $R^2$") is:
+
+$$E = 1 - \frac{\sum_{i=1}^{N} \sum_{c=1}^{C} \left[ -p_{ic} \ln(p_{ic}) \right]}{N \cdot \ln(C)}$$
+
+where $p_{ic}$ is the posterior probability that individual $i$ belongs to class $c$, and $C$ is the number of classes. The numerator is the total observed entropy (sum of individual-level information entropy); the denominator is the maximum possible entropy (which occurs when all posteriors are equal to $1/C$).
+
+- $E = 1$: Perfect classification. Every individual has a posterior of exactly 1.0 for one class.
+- $E = 0$: No classification information. All posteriors are equal across classes.
+
+```{r entropy-function}
+calc_entropy <- function(post) {
+  N <- nrow(post)
+  C <- ncol(post)
+  
+  # Avoid log(0) by adding a tiny constant
+  eps <- 1e-15
+  post_safe <- pmax(post, eps)
+  
+  # Individual-level entropy
+  ind_entropy <- -rowSums(post_safe * log(post_safe))
+  
+  # Maximum possible entropy
+  max_ent <- log(C)
+  
+  # Relative entropy
+  E <- 1 - sum(ind_entropy) / (N * max_ent)
+  
+  return(list(
+    entropy = E,
+    individual_entropy = ind_entropy,
+    mean_individual_entropy = mean(ind_entropy),
+    max_possible_entropy = max_ent
+  ))
+}
+
+ent <- calc_entropy(posterior)
+
+cat("Entropy (relative):", round(ent$entropy, 4), "\n\n")
+cat("Interpretation guidelines:\n")
+cat("  > 0.80: Good classification quality\n")
+cat("  0.60 - 0.80: Moderate; proceed with caution\n")
+cat("  < 0.60: Poor; classification assignments are unreliable\n")
+cat("  Below 0.60 is difficult to publish\n")
+```
+
+## Critical Warning: Entropy Is Not a Selection Criterion
+
+Entropy decreases mechanically as you add more classes to the model. A 2-class model will almost always have higher entropy than a 5-class model, simply because it is easier to separate individuals into 2 groups than 5. If you use entropy to select the number of classes, you will systematically favor simpler models — not because they are better, but because entropy is biased toward simplicity.
+
+**Entropy is a diagnostic for the model you have already selected, not a tool for choosing between competing models.** Use the BIC for selection; use entropy for evaluation.
+
+```{r entropy-across-models}
+# Demonstrate entropy decreasing with more classes
+ent_by_k <- data.frame(
+  Classes = 2:length(lca_models),
+  Entropy = sapply(2:length(lca_models), function(k) {
+    calc_entropy(lca_models[[k]]$posterior)$entropy
+  })
+)
+
+kable(ent_by_k, digits = 4,
+      caption = "Entropy by Number of Classes (Demonstrating Mechanical Decline)")
+```
+
+---
+
+# Average Latent Class Posterior Probability (ALCPP) Matrix
+
+## Construction
+
+The ALCPP matrix summarizes classification quality at the class level. It is constructed by:
+
+1. Assigning each individual to their most likely class (modal assignment).
+2. For each assigned class, computing the average posterior probability for every class.
+
+The result is a $C \times C$ matrix where rows are assigned classes and columns are average posterior probabilities.
+
+```{r alcpp}
+alcpp <- matrix(NA, nrow = length(best_model$P), ncol = length(best_model$P))
+for (c in 1:length(best_model$P)) {
+  members <- which(assigned_class == c)
+  if (length(members) > 0) {
+    alcpp[c, ] <- colMeans(posterior[members, , drop = FALSE])
+  }
+}
+
+rownames(alcpp) <- paste("Assigned to Class", 1:length(best_model$P))
+colnames(alcpp) <- paste("Avg P(Class", 1:length(best_model$P), ")")
+
+kable(round(alcpp, 4), 
+      caption = "Average Latent Class Posterior Probability (ALCPP) Matrix") %>%
+  kable_styling(full_width = FALSE) %>%
+  column_spec(1, bold = TRUE)
+```
+
+## Interpreting the Diagonal
+
+The diagonal values represent the average certainty with which individuals are assigned to their respective classes. These are the most important values in the matrix.
+
+- **Above .90:** Excellent. The model classifies individuals into this class with high confidence.
+- **.80 to .90:** Acceptable. There is some classification uncertainty, but it is manageable if the model is theoretically supported.
+- **Below .80:** Problematic. A substantial proportion of individuals assigned to this class may actually belong to a different class. Downstream analyses using these assignments will be biased.
+
+```{r diagonal-check}
+diag_values <- diag(alcpp)
+cat("ALCPP diagonal values:\n")
+for (c in 1:length(best_model$P)) {
+  status <- ifelse(diag_values[c] >= 0.90, "EXCELLENT",
+             ifelse(diag_values[c] >= 0.80, "acceptable", 
+                    "PROBLEMATIC"))
+  cat(sprintf("  Class %d: %.4f (%s)\n", c, diag_values[c], status))
+}
+```
+
+## Interpreting the Off-Diagonal
+
+Off-diagonal values represent misclassification tendencies. A value of 0.08 in row 1, column 3 means that individuals assigned to Class 1 have, on average, an 8% probability of actually belonging to Class 3. Large off-diagonal values indicate that two classes are poorly separated — the model struggles to distinguish between them.
+
+Examine the largest off-diagonal values: they tell you which class pairs are most easily confused. If two classes have large cross-classification probabilities, consider whether they should be merged or whether additional indicator variables could help distinguish them.
+
+---
+
+# Odds of Correct Classification (OCC)
+
+## Definition
+
+The OCC quantifies how much better the model's classification is compared to random assignment based on class prevalences alone. For each class $c$:
+
+$$OCC_c = \frac{\bar{p}_c / (1 - \bar{p}_c)}{\hat{\pi}_c / (1 - \hat{\pi}_c)}$$
+
+where $\bar{p}_c$ is the ALCPP diagonal value for class $c$ (average correct-classification probability) and $\hat{\pi}_c$ is the class prevalence.
+
+- **OCC = 1:** Classification is no better than chance.
+- **OCC = 5+:** Excellent classification for that class.
+- **OCC between 1 and 5:** Moderate; the model provides some classification improvement over chance, but the class is not strongly defined.
+
+```{r occ}
+class_prev <- best_model$P
+
+occ <- (diag_values / (1 - diag_values)) / (class_prev / (1 - class_prev))
+
+occ_table <- data.frame(
+  Class = 1:length(best_model$P),
+  Prevalence = round(class_prev, 4),
+  ALCPP_Diagonal = round(diag_values, 4),
+  OCC = round(occ, 2),
+  Quality = ifelse(occ >= 5, "Excellent", 
+             ifelse(occ >= 2, "Moderate", "Poor"))
+)
+
+kable(occ_table, caption = "Odds of Correct Classification by Class") %>%
+  kable_styling(full_width = FALSE)
+```
+
+## Why OCC Matters
+
+The OCC is particularly useful for identifying specific classes that are poorly measured by your indicator set. Even if the overall entropy is acceptable, one specific class may have a low OCC — meaning the model can classify individuals into the other classes well but struggles with this one. This points to a measurement problem: the indicators do not capture the distinctive features of that class.
+
+If a class has a low OCC, consider whether additional indicator variables that tap the unique characteristics of that class could improve discrimination. Alternatively, the class may not be a genuine subgroup — it may be a statistical artifact that the model is fitting to noise.
+
+---
+
+# The Classify-Analyze Problem
+
+## What It Is
+
+A common analytical workflow is to assign each individual to their most likely class (modal assignment), create a new categorical variable from these assignments, and then use that variable in subsequent analyses — for example, running a chi-square test of class by gender, or regressing class membership on age and education.
+
+This is called a "classify-analyze" approach. It treats the probabilistic class assignments as if they were deterministic, observed group memberships.
+
+## Why It Introduces Bias
+
+When you assign individual $i$ to Class 2 because their posterior probability for Class 2 is 0.82, you ignore the 0.18 probability that they belong to a different class. By treating the assignment as certain, you overstate the differences between classes (because the uncertainty "smooths" the true differences) and attenuate associations with external variables.
+
+The magnitude of this bias depends on classification quality:
+
+- **High entropy (> .90):** Bias is small. The classify-analyze approach is approximately acceptable as an exploratory tool.
+- **Moderate entropy (.70–.90):** Bias is non-trivial. The three-step approach (Module 10) is strongly preferred.
+- **Low entropy (< .70):** Bias is severe. The classify-analyze approach should not be used. The three-step approach is mandatory.
+
+## The Implication for Your Research Design
+
+If your research plan involves using class membership as a variable in subsequent analyses (e.g., predicting class membership from covariates, or predicting outcomes from class membership), you must choose between:
+
+1. **Classify-analyze (naive):** Simple, widely understood, but biased. Acceptable only if entropy is very high and you acknowledge the limitation.
+2. **Three-step approach (modern):** Accounts for classification error. Recommended whenever covariates are involved. Covered in Module 10.
+
+---
+
+# Full Diagnostic Report
+
+```{r full-diagnostics}
+cat("========================================\n")
+cat("  CLASSIFICATION QUALITY REPORT\n")
+cat("========================================\n\n")
+cat("Model:", length(best_model$P), "classes\n")
+cat("BIC:", round(best_model$bic, 2), "\n\n")
+
+cat("--- Entropy ---\n")
+cat("Relative entropy:", round(ent$entropy, 4), "\n")
+cat("Assessment:", ifelse(ent$entropy > 0.80, "GOOD", 
+                           ifelse(ent$entropy > 0.60, "MODERATE", "POOR")), "\n\n")
+
+cat("--- ALCPP Diagonal ---\n")
+for (c in 1:length(best_model$P)) {
+  cat(sprintf("  Class %d: %.4f\n", c, diag_values[c]))
+}
+cat("Minimum diagonal:", round(min(diag_values), 4), "\n")
+cat("Assessment:", ifelse(min(diag_values) > 0.90, "EXCELLENT",
+                           ifelse(min(diag_values) > 0.80, "ACCEPTABLE", "PROBLEMATIC")), "\n\n")
+
+cat("--- OCC ---\n")
+for (c in 1:length(best_model$P)) {
+  cat(sprintf("  Class %d: %.2f\n", c, occ[c]))
+}
+cat("Minimum OCC:", round(min(occ), 2), "\n")
+cat("Assessment:", ifelse(min(occ) >= 5, "EXCELLENT",
+                           ifelse(min(occ) >= 2, "MODERATE", "POOR")), "\n\n")
+
+cat("--- Individual Classification ---\n")
+cat("% with max posterior > .90:", round(mean(max_post > 0.90) * 100, 1), "%\n")
+cat("% with max posterior > .80:", round(mean(max_post > 0.80) * 100, 1), "%\n")
+cat("% with max posterior < .70:", round(mean(max_post < 0.70) * 100, 1), "%\n")
+```
+
+```{r save-diagnostics}
+# Save diagnostics for use in reporting module
+diagnostics <- list(
+  entropy = ent$entropy,
+  alcpp = alcpp,
+  occ = occ,
+  max_post = max_post,
+  assigned_class = assigned_class
+)
+save(diagnostics, file = "lca_diagnostics.RData")
+```
+
+---
+
+# Summary
+
+After this module, you should be able to:
+
+1. Distinguish between homogeneity (within-class consistency) and separation (between-class distinctiveness).
+2. Compute and interpret posterior probabilities at the individual level.
+3. Calculate entropy manually from the posterior probability matrix and interpret its value.
+4. Construct and interpret the ALCPP matrix, focusing on diagonal and off-diagonal values.
+5. Compute and interpret the OCC for each class.
+6. Understand the bias introduced by the classify-analyze approach and when it becomes unacceptable.
+7. Produce a comprehensive classification quality report.
+
+Proceed to **Module 8: Interpretation and Labeling** to translate the statistical output into substantive meaning.
+
+---
+
+# References
+
+Collins, L. M., & Lanza, S. T. (2010). *Latent class and latent transition analysis.* Wiley.
+
+Weller, B. E., Bowen, N. K., & Faubert, S. J. (2020). Latent class analysis: A guide to best practice. *Journal of Black Psychology, 46*(4), 287–311.
+
+---
+
+```{r nav-footer, echo=FALSE, results='asis'}
+cat('<div style="margin-top:3em; padding-top:1em; border-top:1px solid #ddd; font-size:0.9em; color:#555;">
+<a href="index.html">&#8617; Course Index</a>
+</div>')
+```

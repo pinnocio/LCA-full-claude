@@ -1,0 +1,613 @@
+---
+title: "Module 14: Capstone Exercises — Replicating Published Research Designs"
+subtitle: "LCA for Social Science Research"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    number_sections: true
+    theme: readable
+    highlight: tango
+    code_folding: show
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE, warning = FALSE, message = FALSE,
+  fig.width = 8, fig.height = 5, fig.align = "center"
+)
+```
+
+# Purpose of This Module
+
+This is the capstone of the course. You will execute four complete LCA studies, each modeled on a published research design from the social science literature. Each exercise uses a simulated dataset whose structure mirrors the original study — the same number of indicators, similar sample size, comparable class separation, and the same methodological challenges the original authors faced.
+
+Each exercise is progressively more complex:
+
+1. **Adolescent Delinquency** — Foundational LCA. Binary indicators, clean data, absolute fit works. Your introduction to the full pipeline.
+2. **Varieties of Nationalism** — Sparse data. Many indicators, absolute fit breaks down, BIC-driven selection, sensitivity analysis, construct and external validation.
+3. **Social Determinants of Health** — Modern three-step approach with covariates and distal outcomes.
+4. **Health Behaviors by Gender** — Multiple-group LCA. Measurement invariance testing, conflicting fit statistics, substantive judgment calls.
+
+For each exercise, you receive the data, the research context, and the specific analytical tasks. You make all decisions. Completed exercises should produce a methods section, a fit table, a profile plot, and an interpretation — the full deliverables of a publishable LCA study.
+
+```{r packages}
+library(poLCA)
+library(tidyverse)
+library(nnet)
+library(knitr)
+library(kableExtra)
+
+# Entropy function from Module 7
+calc_entropy <- function(post) {
+  N <- nrow(post); K <- ncol(post)
+  eps <- 1e-15
+  post_safe <- pmax(post, eps)
+  ind_ent <- -rowSums(post_safe * log(post_safe))
+  1 - sum(ind_ent) / (N * log(K))
+}
+```
+
+---
+---
+
+# Exercise 1: Adolescent Delinquency (Foundational LCA)
+
+## Background
+
+Collins and Lanza (2010) analyzed data from 2,087 adolescents in the National Longitudinal Study of Adolescent Health (Add Health). They selected six items measuring delinquent acts in the past year: lying to parents, acting rowdy in public, damaging property, stealing from a store, stealing something worth less than \$50, and participating in a group fight. The original ordinal responses ("Never" through "5 or more times") were dichotomized into "No" (never) and "Yes" (one or more times).
+
+They found four classes: **Non-/Mild Delinquents** (49%), **Verbal Antagonists** (26%), **Shoplifters** (18%), and **General Delinquents** (6%). The four-class model achieved both absolute fit (non-significant $G^2$) and optimal relative fit (lowest BIC). Models with 5 and 6 classes were underidentified. The study demonstrated both quantitative differences (classes ordered by severity) and qualitative differences (Shoplifters vs. Verbal Antagonists are distinct types, not just different severity levels).
+
+## Data Simulation
+
+```{r ex1-data}
+set.seed(101)
+n1 <- 2087
+
+# True class structure from the published study
+prev1 <- c(0.49, 0.26, 0.18, 0.06)
+# Items: LIE, ROWDY, DAMAGE, SHOPLIFT, STEAL50, FIGHT
+# P(Yes) for each class:
+probs1 <- matrix(c(
+# LIE   ROWDY  DAMAGE SHOPLIFT STEAL50 FIGHT
+  0.15, 0.05,  0.02,  0.02,    0.03,   0.04,   # Non-/Mild Delinquents
+  0.85, 0.60,  0.08,  0.05,    0.08,   0.15,   # Verbal Antagonists
+  0.90, 0.70,  0.15,  0.55,    0.50,   0.25,   # Shoplifters
+  0.95, 0.90,  0.60,  0.70,    0.65,   0.70    # General Delinquents
+), nrow = 4, byrow = TRUE)
+
+true_class1 <- sample(1:4, n1, replace = TRUE, prob = prev1)
+
+delinquency <- data.frame(id = 1:n1)
+item_names1 <- c("LIE", "ROWDY", "DAMAGE", "SHOPLIFT", "STEAL50", "FIGHT")
+
+for (j in 1:6) {
+  resp <- numeric(n1)
+  for (i in 1:n1) {
+    resp[i] <- ifelse(rbinom(1, 1, probs1[true_class1[i], j]) == 1, 2, 1)
+  }
+  delinquency[[item_names1[j]]] <- resp
+}
+
+# poLCA coding: 1 = No, 2 = Yes
+cat("Exercise 1 data: N =", nrow(delinquency), ", Items =", length(item_names1), "\n")
+```
+
+## Your Tasks
+
+Complete the full LCA pipeline. For each task, write your code in the empty chunk and answer the interpretive questions in writing.
+
+### Task 1.1: Examine the data
+
+```{r ex1-task1}
+# Verify coding (all values should be 1 or 2)
+# Compute marginal frequencies: what proportion endorsed each behavior?
+# Assess sparseness: what is N/W?
+# Which behavior is most common? Which is rarest?
+
+```
+
+### Task 1.2: Estimate sequential models (1 through 6 classes)
+
+```{r ex1-task2}
+# Define the formula
+# Estimate models with nrep = 50, maxiter = 5000
+# Store all models in a list
+
+```
+
+### Task 1.3: Build the fit table and elbow plot
+
+```{r ex1-task3}
+# Extract LL, AIC, BIC, G², df, npar for each model
+# Create a publication-quality fit table
+# Create an elbow plot
+# NOTE: With 6 binary items and N > 2000, absolute fit (G²) may actually
+# be usable here. Check whether the G² p-value is meaningful by examining
+# whether the degrees of freedom are positive and the N/W ratio is high.
+
+```
+
+**Questions to answer:**
+
+- Which model has the lowest BIC?
+- Does the AIC agree?
+- Is the $G^2$ p-value interpretable for any of the models? (Check degrees of freedom and sparseness.)
+- Do the 5- and 6-class models converge? Do they show signs of underidentification?
+
+### Task 1.4: Assess classification quality
+
+```{r ex1-task4}
+# Select your best model
+# Compute entropy
+# Construct the ALCPP matrix
+# Compute OCC for each class
+
+```
+
+### Task 1.5: Interpret and label the classes
+
+```{r ex1-task5}
+# Extract item-response probabilities: P(Yes = 2 | Class)
+# Create a profile plot
+# Assign labels based on the profiles
+
+```
+
+**Questions to answer:**
+
+- Can you identify the four types described in the published study (Non-/Mild Delinquents, Verbal Antagonists, Shoplifters, General Delinquents)?
+- Which differences between classes are quantitative (severity ordering) and which are qualitative (distinct behavioral types)?
+- Write a full interpretation paragraph following the Module 8 template.
+
+### Task 1.6: Write the methods and results sections
+
+Write a complete methods paragraph and results paragraph for this analysis, following the Module 11 templates. Include all required elements: sample description, indicator description, estimation details, fit table reference, model selection rationale, classification quality, and class interpretation.
+
+---
+---
+
+# Exercise 2: Varieties of Nationalism (Sparse Data and Validation)
+
+## Background
+
+Bonikowski and DiMaggio (2016) used LCA on 23 categorical indicators from the 2004 General Social Survey to identify varieties of American nationalism among ~1,000 respondents. The 23-item contingency table was massively sparse. Absolute fit ($G^2$) was useless — satisfying it would have required a 29-class model with classes of 10 or fewer respondents. The BLRT also failed, favoring 30+ classes. The BIC reliably supported a four-class model: **Creedal** nationalists, **Disengaged**, **Restrictive** nationalists, and **Ardent** nationalists.
+
+The researchers validated the model by (a) showing construct validity — class membership predicted attitudes toward ethnoracial relations, redistribution, and international cooperation — and (b) replicating the same four-class structure in entirely different datasets (1996 GSS and 2012 GfK survey). They also defended against item-imbalance critiques by replicating the four-class structure with a reduced, balanced set of only 6 indicators.
+
+## Data Simulation
+
+We simulate 12 indicators (not 23 — to keep computation tractable in `poLCA`) spanning three nationalism dimensions, with class structures approximating the published findings.
+
+```{r ex2-data}
+set.seed(202)
+n2 <- 950
+
+prev2 <- c(0.35, 0.22, 0.24, 0.19)
+# 12 items across 3 dimensions:
+# National Identity (4 items): CLOSEUS, CITIZEN, BORN, LIVED
+# National Pride (4 items): PRDEM, PRSCI, PRHIST, PRMIL
+# National Hubris (4 items): BETTER, SUPPORT, RATHER, PROUD
+
+# P(high endorsement) per class
+probs2 <- matrix(c(
+# CLOSEUS CITIZEN BORN  LIVED PRDEM PRSCI PRHIST PRMIL BETTER SUPPORT RATHER PROUD
+  0.70,   0.50,  0.20, 0.25, 0.80, 0.75, 0.45,  0.40, 0.20,  0.25,   0.60,  0.35,  # Creedal
+  0.30,   0.25,  0.15, 0.15, 0.35, 0.30, 0.20,  0.20, 0.10,  0.15,   0.25,  0.15,  # Disengaged
+  0.85,   0.80,  0.75, 0.70, 0.60, 0.55, 0.70,  0.65, 0.55,  0.65,   0.80,  0.50,  # Restrictive
+  0.90,   0.85,  0.80, 0.80, 0.90, 0.85, 0.85,  0.90, 0.80,  0.85,   0.90,  0.85   # Ardent
+), nrow = 4, byrow = TRUE)
+
+true_class2 <- sample(1:4, n2, replace = TRUE, prob = prev2)
+item_names2 <- c("CLOSEUS","CITIZEN","BORN","LIVED","PRDEM","PRSCI",
+                  "PRHIST","PRMIL","BETTER","SUPPORT","RATHER","PROUD")
+
+nationalism <- data.frame(id = 1:n2)
+for (j in 1:12) {
+  resp <- numeric(n2)
+  for (i in 1:n2) {
+    resp[i] <- ifelse(rbinom(1, 1, probs2[true_class2[i], j]) == 1, 1, 2)
+  }
+  nationalism[[item_names2[j]]] <- resp
+}
+
+# Add covariates for validation
+nationalism$age <- pmax(18, pmin(85, round(rnorm(n2, 48, 16))))
+nationalism$college <- rbinom(n2, 1, 0.35)
+nationalism$nonwhite <- rbinom(n2, 1, 0.30)
+
+cat("Exercise 2 data: N =", nrow(nationalism), ", Items =", length(item_names2), "\n")
+cat("N/W ratio:", round(n2 / 2^12, 4), "\n")
+cat("WARNING: N/W is extremely low. This is intentional — it replicates\n")
+cat("the sparseness problem from the original study.\n")
+```
+
+## Your Tasks
+
+### Task 2.1: Confront the sparseness problem
+
+```{r ex2-task1}
+# Compute N/W. What does it tell you?
+# How many of the 4096 possible response patterns are actually observed?
+# What proportion of observed patterns have counts of 1 or 0?
+# What are the consequences for absolute fit testing?
+
+```
+
+### Task 2.2: Estimate sequential models (1 through 6 classes)
+
+```{r ex2-task2}
+# Define the formula with all 12 indicators
+# Use nrep = 100 (sparse data needs more random starts)
+# Monitor for convergence problems
+# Record whether different random starts yield different log-likelihoods
+
+```
+
+### Task 2.3: Model selection under sparseness
+
+```{r ex2-task3}
+# Build the fit table
+# Create the elbow plot
+# Can you use the G² statistic? Why or why not?
+# Which criterion do you rely on, and why?
+# Does the BIC clearly point to one model?
+
+```
+
+**Questions to answer:**
+
+- If you were forced to rely on the $G^2$ statistic, what would happen?
+- Does the BIC agree with the AIC? If not, which do you trust and why?
+- Examine the profiles of the BIC-optimal model and the adjacent alternatives. Does adding a class produce a genuinely new type, or a redundant variant?
+
+### Task 2.4: Sensitivity analysis — indicator subset
+
+Replicate the Bonikowski strategy: re-estimate the LCA using only 6 balanced indicators (2 identity, 2 pride, 2 hubris). Does the same class structure emerge?
+
+```{r ex2-task4}
+# Select 6 balanced indicators:
+# Identity: CLOSEUS, CITIZEN
+# Pride: PRDEM, PRSCI
+# Hubris: BETTER, SUPPORT
+# Re-estimate and compare profiles to the full model
+
+```
+
+### Task 2.5: Construct validation
+
+```{r ex2-task5}
+# Assign individuals to their most likely class
+# Test whether classes differ on age, college education, and race
+# Do the associations make theoretical sense for nationalism types?
+
+```
+
+### Task 2.6: Write the full methods and results
+
+Write the complete write-up, including an explicit discussion of why you did not use absolute fit criteria and how you defended your model selection.
+
+---
+---
+
+# Exercise 3: Social Determinants of Health (Three-Step with Distal Outcomes)
+
+## Background
+
+Weller et al. (2020) analyzed 1,836 Black adolescents from the National Survey of Children's Health. Using 10 binary indicators of social determinants of health (insurance, school engagement, food sufficiency, neighborhood safety, mentor presence, etc.), they identified four classes: **Promotive Factors** (58%), **Barriers in the Physical Environment** (33%), **Access to Health Care** (6%), and **Limited Access to Promotive Factors** (3%).
+
+They used the modern three-step approach: finalized the measurement model, assigned cases, fixed the measurement parameters, then tested whether covariates (gender, income, parental education) predicted class membership and whether distal mental health outcomes (behavior problems, ADHD) differed across classes — using pairwise Wald tests rather than naive classify-analyze.
+
+A critical finding: the Promotive Factors class had *higher* odds of ADHD diagnosis than the Barriers class — an unexpected result they attributed to disparities in healthcare access and diagnostic bias rather than genuine differences in psychopathology.
+
+## Data Simulation
+
+```{r ex3-data}
+set.seed(303)
+n3 <- 1836
+
+prev3 <- c(0.58, 0.33, 0.06, 0.03)
+# 10 binary items: all coded 1 = risk, 2 = promotive
+# INSURE, TRANSIT, SCHOOL, ACTIVITY, FOOD, DISCRIM, MENTOR, NBSUPPORT, NBSAFE, SCHSAFE
+
+probs3 <- matrix(c(
+# INS  TRANS SCHOOL ACTIV FOOD  DISCR MENTR NBSUP NBSAF SCHSAF
+  0.92, 0.85, 0.90, 0.75, 0.95, 0.80, 0.70, 0.85, 0.88, 0.90,  # Promotive
+  0.85, 0.75, 0.80, 0.55, 0.90, 0.65, 0.50, 0.30, 0.35, 0.45,  # Barriers Phys
+  0.40, 0.35, 0.75, 0.60, 0.85, 0.70, 0.55, 0.70, 0.75, 0.80,  # Access HC
+  0.35, 0.30, 0.40, 0.25, 0.50, 0.30, 0.20, 0.25, 0.60, 0.35   # Limited Access
+), nrow = 4, byrow = TRUE)
+
+true_class3 <- sample(1:4, n3, replace = TRUE, prob = prev3)
+item_names3 <- c("INSURE","TRANSIT","SCHOOL","ACTIVITY","FOOD",
+                  "DISCRIM","MENTOR","NBSUPPORT","NBSAFE","SCHSAFE")
+
+sdoh <- data.frame(id = 1:n3)
+for (j in 1:10) {
+  resp <- numeric(n3)
+  for (i in 1:n3) {
+    resp[i] <- ifelse(rbinom(1, 1, probs3[true_class3[i], j]) == 1, 2, 1)
+  }
+  sdoh[[item_names3[j]]] <- resp
+}
+
+# Covariates
+sdoh$female <- rbinom(n3, 1, 0.51)
+sdoh$low_income <- rbinom(n3, 1, 0.45)
+sdoh$parent_college <- rbinom(n3, 1, 0.25)
+
+# Distal outcomes (class-differentiated)
+class_behav_prob <- c(0.08, 0.11, 0.10, 0.18)  
+class_adhd_prob  <- c(0.12, 0.09, 0.08, 0.07)   # ADHD higher in Promotive (paradox)
+sdoh$behav_problems <- rbinom(n3, 1, class_behav_prob[true_class3])
+sdoh$adhd <- rbinom(n3, 1, class_adhd_prob[true_class3])
+
+cat("Exercise 3 data: N =", nrow(sdoh), ", Items =", length(item_names3), "\n")
+```
+
+## Your Tasks
+
+### Task 3.1: Data preparation and diagnostics
+
+```{r ex3-task1}
+# Verify coding (1 = risk/absent, 2 = promotive/present)
+# Marginal frequencies
+# Sparseness assessment
+# Note which items have the most vs. least variation
+
+```
+
+### Task 3.2: Estimate and select the model
+
+```{r ex3-task2}
+# Estimate models from 1 to 6 classes
+# Build fit table and elbow plot
+# Select the optimal model
+# Assess classification quality (entropy, ALCPP, OCC)
+
+```
+
+### Task 3.3: Interpret and label the classes
+
+```{r ex3-task3}
+# Extract P(promotive = 2 | class)
+# Create profile plot
+# Assign labels
+# Write interpretation paragraph
+
+```
+
+**Question:** One class will likely be very small (around 3%). Is it substantively meaningful or statistical noise? How do you decide?
+
+### Task 3.4: Three-step covariate analysis
+
+```{r ex3-task4}
+# Step 1: Already done (unconditional model)
+# Step 2: Extract modal class assignments
+# Step 3: Multinomial logistic regression with female, low_income, parent_college
+# Report odds ratios with 95% CI
+# Write interpretation paragraph
+
+```
+
+### Task 3.5: Distal outcome analysis
+
+This is the key task. Test whether class membership predicts behavior problems and ADHD diagnosis.
+
+```{r ex3-task5}
+# Method: Classify-analyze using chi-square tests and logistic regression
+# For each outcome:
+#   - Cross-tabulate outcome by class
+#   - Report class-specific proportions
+#   - Run logistic regression: outcome ~ class
+#   - Report odds ratios
+
+# CRITICAL QUESTION: Does the Promotive Factors class show HIGHER rates of ADHD?
+# If so, how would you interpret this? (Hint: think about what ADHD diagnosis
+# requires — access to a healthcare provider who can make the diagnosis.)
+
+```
+
+### Task 3.6: Write the full report
+
+Write methods and results sections that include all elements: indicators, model selection, classification quality, class interpretation, covariate effects, AND distal outcome analysis. Discuss the ADHD finding and its implications for interpreting distal outcomes.
+
+---
+---
+
+# Exercise 4: Health Behaviors by Gender (Multiple-Group LCA)
+
+## Background
+
+Collins and Lanza (2010) analyzed 2,065 high school seniors from the 2004 Monitoring the Future study. Using five ordinal indicators of health behavior — eating breakfast, eating green vegetables, eating fruit, exercising vigorously, and getting adequate sleep — each on a three-point scale (1 = never/seldom, 2 = sometimes/most days, 3 = nearly every day), they identified five classes: **Unhealthy** (14%), **Sleep Deprived** (12%), **Typical** (37%), **Healthy Eaters** (11%), and **Healthy** (27%).
+
+They then introduced gender as a grouping variable to test measurement invariance. The $G^2$ difference test was significant (p < .002), suggesting the classes had different item-response probabilities for males and females. However, both AIC and BIC favored the constrained (invariance) model. Visual inspection revealed only minor quantitative differences (e.g., the "Healthy Eaters" class had slightly different exercise probabilities by gender), not qualitative differences. They enforced measurement invariance and compared class prevalences: males were overrepresented in "Typical," females in "Sleep Deprived" and "Healthy Eaters."
+
+## Data Simulation
+
+```{r ex4-data}
+set.seed(404)
+n4 <- 2065
+
+# Gender split
+gender <- rbinom(n4, 1, 0.52)  # 1 = female
+
+# Class prevalences differ by gender
+prev_male   <- c(0.15, 0.11, 0.41, 0.08, 0.25)
+prev_female <- c(0.13, 0.24, 0.28, 0.14, 0.21)
+
+true_class4 <- numeric(n4)
+for (i in 1:n4) {
+  if (gender[i] == 0) {
+    true_class4[i] <- sample(1:5, 1, prob = prev_male)
+  } else {
+    true_class4[i] <- sample(1:5, 1, prob = prev_female)
+  }
+}
+
+# Item-response probabilities for 3-category ordinal items
+# P(category 1), P(category 2), P(category 3) per class
+# Items: BREAKFAST, GREENVEG, FRUIT, EXERCISE, SLEEP
+# poLCA coding: 1, 2, 3
+
+# Simplified: generate using ordered probabilities
+# Class 1: Unhealthy (low on everything)
+# Class 2: Sleep Deprived (moderate eating, very low sleep)
+# Class 3: Typical (moderate on everything)
+# Class 4: Healthy Eaters (high eating, moderate exercise/sleep)
+# Class 5: Healthy (high on everything)
+
+# Item means per class (1-3 scale, then discretized)
+means4 <- matrix(c(
+# BREAK  GREEN  FRUIT  EXER  SLEEP
+  1.3,   1.2,   1.3,   1.4,  1.5,   # Unhealthy
+  2.0,   1.8,   1.9,   2.0,  1.1,   # Sleep Deprived
+  2.0,   1.9,   2.0,   2.1,  2.2,   # Typical
+  2.7,   2.6,   2.8,   1.9,  2.0,   # Healthy Eaters
+  2.7,   2.5,   2.6,   2.7,  2.6    # Healthy
+), nrow = 5, byrow = TRUE)
+
+item_names4 <- c("BREAKFAST", "GREENVEG", "FRUIT", "EXERCISE", "SLEEP")
+health <- data.frame(id = 1:n4, GENDER = gender)
+
+for (j in 1:5) {
+  resp <- numeric(n4)
+  for (i in 1:n4) {
+    mu <- means4[true_class4[i], j]
+    # Generate ordinal: 1, 2, or 3 based on latent continuous
+    latent <- rnorm(1, mu, 0.6)
+    if (latent < 1.5) resp[i] <- 1
+    else if (latent < 2.5) resp[i] <- 2
+    else resp[i] <- 3
+  }
+  health[[item_names4[j]]] <- resp
+}
+
+cat("Exercise 4 data: N =", nrow(health), ", Items =", length(item_names4), "\n")
+cat("Gender split: Male =", sum(health$GENDER == 0), 
+    ", Female =", sum(health$GENDER == 1), "\n")
+cat("Response categories per item: 3 (ordinal)\n")
+cat("N/W ratio:", round(n4 / 3^5, 2), "\n")
+```
+
+## Your Tasks
+
+### Task 4.1: Examine the data
+
+```{r ex4-task1}
+# Check coding (all values 1, 2, or 3)
+# Marginal frequencies for each item — overall and by gender
+# Sparseness: W = 3^5 = 243. N/W = ?
+# Are any response categories very rare?
+
+```
+
+### Task 4.2: Estimate the baseline model (full sample, no gender split)
+
+```{r ex4-task2}
+# Define formula with 5 ordinal indicators
+# Estimate models from 1 to 6 classes (nrep = 100)
+# Build fit table
+# Select the optimal model
+# NOTE: With 3-category items, the profile table will have 3 columns per item.
+# You need to examine the full probability distribution, not just P(category 1).
+
+```
+
+**Question:** The original study selected a 5-class model even though the BIC favored a 4-class model. They argued that the AIC and interpretability supported 5 classes. Do you encounter a similar situation? How do you handle it?
+
+### Task 4.3: Interpret the baseline classes
+
+```{r ex4-task3}
+# Extract item-response probabilities (3 categories per item)
+# For ordinal items, consider plotting the P(highest category) or the modal category
+# Assign provisional labels
+# Does the profile plot reveal the five types from the published study?
+
+```
+
+### Task 4.4: Multiple-group analysis — testing measurement invariance
+
+`poLCA` does not support multiple-group LCA natively. However, you can approximate it by estimating the model separately for males and females and comparing the profiles:
+
+```{r ex4-task4}
+# Split the data by gender
+males <- health[health$GENDER == 0, ]
+females <- health[health$GENDER == 1, ]
+
+# Estimate the same number of classes in each subsample
+# Compare the item-response probability profiles
+# Do the same class types emerge in both groups?
+# Are there differences — and are they quantitative (minor magnitude shifts)
+# or qualitative (different class structures)?
+
+```
+
+**Questions to answer:**
+
+- Do the same five class types emerge for both genders?
+- If you compare the profiles item by item, are the differences minor (e.g., exercise probabilities differ slightly) or fundamental (e.g., a class exists for one gender but not the other)?
+- Based on your visual inspection, would you conclude that measurement invariance holds?
+
+### Task 4.5: Compare class prevalences by gender
+
+```{r ex4-task5}
+# Using the full-sample model, assign individuals to classes
+# Cross-tabulate class by gender
+# Run a chi-square test
+# Report class-specific proportions by gender
+# Which classes show the largest gender differences?
+
+```
+
+**Questions to answer:**
+
+- Are males overrepresented in any class? Females?
+- Is the pattern consistent with the published finding (males in "Typical," females in "Sleep Deprived" and "Healthy Eaters")?
+- Write a paragraph interpreting the gender differences, following the Module 8 template.
+
+### Task 4.6: Write the full report
+
+Write methods and results sections that include the baseline model, the measurement invariance assessment, and the prevalence comparison. Discuss how you navigated conflicting fit statistics (if they occurred) and justify your measurement invariance decision.
+
+---
+---
+
+# Reflection: What These Four Exercises Taught You
+
+After completing all four exercises, write brief responses to the following:
+
+1. **Which exercise was most difficult, and why?**
+
+2. **In Exercise 2, you confronted sparseness. How did your experience differ from Exercise 1, where sparseness was not a problem? What did you learn about the limits of absolute fit?**
+
+3. **In Exercise 3, you encountered an unexpected distal outcome finding (ADHD). How did this change your understanding of what LCA results can and cannot tell you?**
+
+4. **In Exercise 4, you made a judgment call about measurement invariance. Was the decision clear-cut, or did you have to exercise substantive judgment? What does this teach you about the role of theory in LCA?**
+
+5. **Across all four exercises, which analytical decision felt most uncertain — model selection, class labeling, covariate interpretation, or something else? Why?**
+
+6. **If you were designing your own LCA study from scratch now, what would you do differently compared to what you would have done before this course?**
+
+---
+
+# References
+
+Bonikowski, B., & DiMaggio, P. (2016). Varieties of American popular nationalism. *American Sociological Review, 81*(5), 949–980.
+
+Bonikowski, B. (2021). Mapping culture with latent class analysis: A response to Eger and Hjerm. *Nations and Nationalism, 27*(4), 926–941.
+
+Collins, L. M., & Lanza, S. T. (2010). *Latent class and latent transition analysis: With applications in the social, behavioral, and health sciences.* Wiley.
+
+Weller, B. E., Bowen, N. K., & Faubert, S. J. (2020). Latent class analysis: A guide to best practice. *Journal of Black Psychology, 46*(4), 287–311.
+
+---
+
+```{r nav-footer, echo=FALSE, results='asis'}
+cat('<div style="margin-top:3em; padding-top:1em; border-top:1px solid #ddd; font-size:0.9em; color:#555;">
+<a href="index.html">&#8617; Course Index</a>
+</div>')
+```

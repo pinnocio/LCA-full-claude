@@ -1,0 +1,551 @@
+---
+title: "Module 4: Data Preparation and Diagnostics in R"
+subtitle: "LCA for Social Science Research"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    number_sections: true
+    theme: readable
+    highlight: tango
+    code_folding: show
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE, warning = FALSE, message = FALSE,
+  fig.width = 8, fig.height = 5, fig.align = "center"
+)
+```
+
+# Purpose of This Module
+
+This module covers the practical steps of importing, cleaning, recoding, and diagnosing your data in R before running any LCA models. It produces a clean, analysis-ready dataset that will be used in all subsequent modules.
+
+This is also where the worked example dataset is created. Because we are demonstrating the method rather than analyzing real data, we simulate a dataset with a known latent class structure. This allows us to evaluate how well the analysis recovers the "true" classes — a luxury not available with real data, but invaluable for learning.
+
+```{r packages}
+library(poLCA)
+library(tidyverse)
+library(knitr)
+library(kableExtra)
+library(haven)  # For importing SPSS/Stata files
+```
+
+---
+
+# Importing Data
+
+## From CSV
+
+The most common format for survey data exports. The `read_csv()` function from the `readr` package (part of `tidyverse`) handles this cleanly.
+
+```{r import-csv, eval=FALSE}
+# Import a CSV file
+raw_data <- read_csv("data/raw/survey_data.csv")
+
+# Inspect the first few rows
+head(raw_data)
+
+# Check variable types
+str(raw_data)
+```
+
+## From SPSS (.sav)
+
+Many social science surveys (e.g., the European Social Survey, ANES) distribute data in SPSS format. The `haven` package reads `.sav` files and preserves variable labels and value labels.
+
+```{r import-spss, eval=FALSE}
+# Import SPSS file
+raw_data <- read_sav("data/raw/survey_data.sav")
+
+# haven imports labelled vectors — convert to standard R types
+# Strip labels for numeric processing:
+raw_data <- raw_data %>% 
+  mutate(across(everything(), ~ as.numeric(zap_labels(.x))))
+
+# Or selectively strip labels for specific columns:
+# raw_data$item1 <- as.numeric(raw_data$item1)
+```
+
+## From Stata (.dta)
+
+```{r import-stata, eval=FALSE}
+# Import Stata file
+raw_data <- read_dta("data/raw/survey_data.dta")
+
+# Same label-stripping approach as SPSS
+raw_data <- raw_data %>% 
+  mutate(across(everything(), ~ as.numeric(zap_labels(.x))))
+```
+
+## From Excel (.xlsx)
+
+```{r import-excel, eval=FALSE}
+library(readxl)
+raw_data <- read_excel("data/raw/survey_data.xlsx", sheet = 1)
+```
+
+---
+
+# Simulating the Worked Example Data
+
+In a real study, the steps above would produce your `raw_data` object. For this course, we simulate a dataset with a known 4-class structure. This simulation serves as both the worked example and a template for how you might conduct Monte Carlo power analyses for your own study.
+
+## Defining the True Population Structure
+
+We define four latent classes with distinct attitudinal profiles:
+
+```{r define-truth}
+set.seed(42)
+n <- 800
+
+# True class prevalences
+true_prevalences <- c(0.30, 0.25, 0.25, 0.20)
+
+# True class labels (for our reference only — the model does not know these)
+true_labels <- c("Progressive", "Conservative", "Communitarian", "Libertarian")
+
+# True item-response probabilities: P(Agree = 1 | Class)
+# Each row is a class; each column is an indicator
+# Columns: REDIST, IMMIG, PRIDE, TRUST, TRAD, ENVIR
+
+true_probs <- matrix(c(
+# REDIST  IMMIG  PRIDE  TRUST  TRAD   ENVIR
+  0.85,   0.15,  0.20,  0.55,  0.10,  0.90,   # Progressive
+  0.10,   0.90,  0.90,  0.15,  0.90,  0.10,   # Conservative
+  0.80,   0.85,  0.85,  0.20,  0.80,  0.75,   # Communitarian
+  0.15,   0.20,  0.25,  0.50,  0.15,  0.15    # Libertarian
+), nrow = 4, byrow = TRUE)
+
+colnames(true_probs) <- c("REDIST", "IMMIG", "PRIDE", "TRUST", "TRAD", "ENVIR")
+rownames(true_probs) <- true_labels
+```
+
+Let us examine the true profiles to understand what the model should recover:
+
+```{r display-truth}
+kable(true_probs, digits = 2,
+      caption = "True Item-Response Probabilities (Data-Generating Parameters)") %>%
+  kable_styling(full_width = FALSE) %>%
+  column_spec(1, bold = TRUE)
+```
+
+**Reading the table:** Each cell represents the probability that a member of the row class endorses (agrees with) the column item.
+
+- **Progressive class (30%):** High probability of endorsing redistribution (0.85) and environment (0.90); low probability of endorsing immigration restriction (0.15), national pride (0.20), and traditional values (0.10). Moderate trust (0.55).
+- **Conservative class (25%):** The inverse pattern. High on immigration, pride, and traditional values; low on redistribution and environment. Low trust.
+- **Communitarian class (25%):** A cross-cutting profile. High on redistribution (0.80) AND immigration restriction (0.85), pride (0.85), and traditional values (0.80). Also moderately pro-environment (0.75). Low trust (0.20). This class breaks the standard left-right alignment.
+- **Libertarian class (20%):** Low on nearly everything — low redistribution (0.15), low immigration restriction (0.20), low pride (0.25), low traditional values (0.15), low environment (0.15). Moderate trust (0.50). This class represents a "disengaged" or "anti-interventionist" profile.
+
+## Generating the Observed Data
+
+```{r generate-data}
+# Assign each individual to a true latent class
+true_class <- sample(1:4, size = n, replace = TRUE, prob = true_prevalences)
+
+# Generate observed responses for each individual
+# poLCA requires: 1 = Agree, 2 = Disagree
+sim_data <- data.frame(id = 1:n)
+item_names <- colnames(true_probs)
+
+for (j in seq_along(item_names)) {
+  responses <- numeric(n)
+  for (i in 1:n) {
+    p_agree <- true_probs[true_class[i], j]
+    # Draw a Bernoulli response: 1 = Agree, 0 = Disagree
+    agree <- rbinom(1, 1, p_agree)
+    # Recode to poLCA format: 1 = Agree, 2 = Disagree
+    responses[i] <- ifelse(agree == 1, 1, 2)
+  }
+  sim_data[[item_names[j]]] <- responses
+}
+
+# Store the true class membership (unavailable in real research)
+sim_data$true_class <- true_class
+
+# Generate covariate data
+# These are independent of class membership in this simulation
+# (In a real study, covariates may be correlated with class membership)
+sim_data$age <- pmax(18, pmin(85, round(rnorm(n, mean = 45, sd = 15))))
+sim_data$female <- rbinom(n, 1, prob = 0.52)
+sim_data$education <- sample(1:3, n, replace = TRUE, prob = c(0.30, 0.40, 0.30))
+# 1 = secondary or less, 2 = some post-secondary, 3 = university degree
+
+cat("Dataset created:", nrow(sim_data), "rows,", ncol(sim_data), "columns\n")
+```
+
+---
+
+# Data Inspection
+
+## Variable Structure
+
+Before any analysis, verify that your variables are the correct type and contain the expected values.
+
+```{r inspect-structure}
+# Check the structure of the indicator variables
+str(sim_data[, item_names])
+```
+
+All indicator variables should be integers (or numeric) with values 1 and 2 for binary items. If you see character strings, factors, or values of 0, you need to recode.
+
+## Verifying the Coding
+
+The most common source of errors in `poLCA` is incorrect variable coding. This check is non-negotiable.
+
+```{r verify-coding}
+# Check the range and unique values of each indicator
+coding_check <- sapply(sim_data[, item_names], function(x) {
+  list(
+    min = min(x, na.rm = TRUE),
+    max = max(x, na.rm = TRUE),
+    unique_values = sort(unique(x)),
+    any_zero = any(x == 0, na.rm = TRUE),
+    any_NA = any(is.na(x))
+  )
+})
+
+# Display
+for (item in item_names) {
+  vals <- sort(unique(sim_data[[item]]))
+  has_zero <- 0 %in% vals
+  cat(sprintf("%-8s  Values: %s  %s\n", 
+              item, 
+              paste(vals, collapse = ", "),
+              ifelse(has_zero, "*** WARNING: contains 0 ***", "OK")))
+}
+```
+
+If any variable contains a 0, recode it:
+
+```{r fix-coding, eval=FALSE}
+# Fix 0/1 coding to 1/2 coding
+sim_data$ITEM <- sim_data$ITEM + 1
+
+# Fix character coding
+sim_data$ITEM <- ifelse(sim_data$ITEM == "yes", 1, 2)
+
+# Fix factor coding
+sim_data$ITEM <- as.numeric(sim_data$ITEM)
+# Then verify the numeric values are 1, 2, ...
+```
+
+## Marginal Frequencies
+
+Examine the marginal distribution of each indicator. This serves multiple purposes: it verifies that the data were read correctly, identifies skewed items, and provides baseline statistics for your methods section.
+
+```{r marginal-freq}
+# Compute proportion agreeing (response = 1) for each item
+freq_table <- sim_data %>%
+  select(all_of(item_names)) %>%
+  summarise(across(everything(), list(
+    nagree = ~ sum(.x == 1, na.rm = TRUE),
+    ndisagree = ~ sum(.x == 2, na.rm = TRUE),
+    pctagree = ~ mean(.x == 1, na.rm = TRUE) * 100,
+    nmissing = ~ sum(is.na(.x))
+  ))) %>%
+  pivot_longer(everything(),
+               names_to = c("Item", ".value"),
+               names_pattern = "(.+)_(.+)")
+
+kable(freq_table, digits = 1,
+      caption = "Marginal Frequencies of Indicator Variables",
+      col.names = c("Item", "n Agree", "n Disagree", "% Agree", "n Missing")) %>%
+  kable_styling(full_width = FALSE)
+```
+
+**What to look for:**
+
+- **Extreme skew:** Items where over 95% or under 5% of respondents give the same response provide almost no discriminatory power for LCA. They do not help differentiate classes because nearly everyone responds the same way. Consider dropping or recoding such items.
+- **Missing data:** Note the number and proportion of missing values for each item. `poLCA` handles missing indicator data via FIML, so missing values on indicators do not require deletion. However, if one item has much higher missingness than others, investigate why (item sensitivity? placement at the end of the survey?).
+- **Unexpected distributions:** If the proportions diverge sharply from what you expected (e.g., you expected a roughly even split but observe 90/10), verify that the coding is correct and that the item was interpreted as intended.
+
+## Cross-Tabulation of Response Patterns
+
+Each unique combination of responses across all indicators defines a response pattern. The number of unique observed patterns, compared to the total possible patterns, gives a concrete picture of data density.
+
+```{r response-patterns}
+# Count unique response patterns
+patterns <- sim_data %>%
+  select(all_of(item_names)) %>%
+  group_by(across(everything())) %>%
+  summarise(count = n(), .groups = "drop") %>%
+  arrange(desc(count))
+
+# Summary statistics
+W_total <- prod(sapply(sim_data[item_names], function(x) length(unique(x))))
+W_observed <- nrow(patterns)
+NW_ratio <- n / W_total
+
+cat("Total possible response patterns (W):", W_total, "\n")
+cat("Observed unique patterns:", W_observed, "\n")
+cat("Patterns observed only once:", sum(patterns$count == 1), "\n")
+cat("Patterns observed 0 times:", W_total - W_observed, "\n")
+cat("N/W ratio:", round(NW_ratio, 2), "\n")
+```
+
+```{r top-patterns}
+# Show the 10 most common response patterns
+kable(head(patterns, 10), 
+      caption = "10 Most Frequent Response Patterns") %>%
+  kable_styling(full_width = FALSE)
+```
+
+**Interpretation of the N/W ratio:**
+
+- $N/W > 10$: Data density is excellent. Estimation should be stable.
+- $5 < N/W < 10$: Adequate for most models.
+- $2 < N/W < 5$: Borderline. Monitor for convergence issues and consider collapsing categories.
+- $N/W < 2$: Severe sparseness. You will likely encounter estimation problems. Strongly consider reducing the number of indicators, collapsing polytomous variables, or increasing your sample size.
+
+---
+
+# Handling Missing Data
+
+## Missing Data Mechanisms
+
+Before choosing a strategy, consider which mechanism best describes your missing data:
+
+- **Missing Completely at Random (MCAR):** The probability of missingness is unrelated to any observed or unobserved variable. Example: a respondent accidentally skips a question. MCAR is the strongest and least realistic assumption.
+- **Missing at Random (MAR):** The probability of missingness depends on observed variables but not on the missing value itself. Example: younger respondents are more likely to skip the trust question, but conditional on age, the probability of skipping is unrelated to the respondent's actual trust level. Most modern missing data methods (FIML, MI) assume MAR.
+- **Missing Not at Random (MNAR):** The probability of missingness depends on the missing value itself. Example: respondents with very low trust are more likely to skip the trust question specifically because they distrust the survey. MNAR is the most problematic scenario and cannot be fully addressed by standard methods.
+
+## FIML in poLCA
+
+`poLCA` uses Full-Information Maximum Likelihood (FIML) to handle missing data on indicator variables. Under FIML, individuals with partially observed indicators are retained in the analysis. The likelihood function is computed using only the observed responses for each individual, effectively marginalizing over the missing responses. No imputation is performed; the model simply uses whatever information each individual provides.
+
+FIML is valid under the MAR assumption and produces unbiased parameter estimates as long as missingness is ignorable.
+
+**Key limitation:** FIML handles missing indicators only. Cases with missing data on covariates are dropped from the analysis when covariates are included in the model. This is addressed below.
+
+To use FIML, simply ensure that missing values are coded as `NA` in your data frame:
+
+```{r fiml-demo, eval=FALSE}
+# Ensure missing values are coded as NA
+# If your data uses -999 for missing:
+raw_data[raw_data == -999] <- NA
+
+# If your data uses blank strings:
+raw_data[raw_data == ""] <- NA
+
+# poLCA will automatically use FIML for NA values in indicators
+```
+
+## Multiple Imputation for Covariates
+
+If your covariate variables (age, gender, education, etc.) contain missing values, you must impute them before running the covariate model (Module 10). The `mice` package provides a flexible framework for multiple imputation.
+
+An important advantage of MI over FIML is that you can include **auxiliary variables** in the imputation model — variables that will not be included in the final LCA but may be related to the probability of missingness or correlated with the missing values. Including well-chosen auxiliaries makes the Missing at Random (MAR) assumption more plausible and increases the accuracy of the imputed values. For example, if you are imputing missing education data, including income or occupation as auxiliary variables in the imputation model will produce more accurate imputations, even though income and occupation are not used in the LCA itself.
+
+```{r mi-demo, eval=FALSE}
+library(mice)
+
+# Examine missing data patterns
+md.pattern(sim_data[, c("age", "female", "education")])
+
+# Run multiple imputation (m = 20 imputed datasets)
+# Include auxiliary variables in the imputation model if available
+# (e.g., income, occupation — variables correlated with the missing values)
+imp <- mice(sim_data[, c("age", "female", "education", "income", "occupation")], 
+            m = 20, method = "pmm", seed = 123)
+
+# Extract a single completed dataset (for preliminary analysis)
+completed_data <- complete(imp, action = 1)
+
+# For rigorous analysis: estimate the model on each imputed dataset
+# and pool results using Rubin's rules
+# (Module 10 provides more detail)
+```
+
+---
+
+# Recoding in Practice
+
+## Dichotomizing Likert Scales
+
+If your original items are on a Likert scale, here is how to collapse them to binary:
+
+```{r recode-likert, eval=FALSE}
+# Original: 1 = Strongly Disagree, 2 = Disagree, 3 = Neutral, 
+#           4 = Agree, 5 = Strongly Agree
+
+# Top-box recoding: Agree + Strongly Agree = 1, all else = 2
+raw_data <- raw_data %>%
+  mutate(
+    REDIST = case_when(
+      REDIST_original %in% c(4, 5) ~ 1,   # Agree/Strongly Agree
+      REDIST_original %in% c(1, 2, 3) ~ 2, # Disagree/Neutral
+      TRUE ~ NA_real_                        # Missing
+    ),
+    IMMIG = case_when(
+      IMMIG_original %in% c(4, 5) ~ 1,
+      IMMIG_original %in% c(1, 2, 3) ~ 2,
+      TRUE ~ NA_real_
+    )
+    # ... repeat for all items
+  )
+```
+
+## Reverse Coding
+
+If some items are phrased in the opposite direction (e.g., "Immigration enriches our culture" instead of "Immigration should be restricted"), reverse-code them before analysis so that a consistent direction aids interpretation:
+
+```{r reverse-code, eval=FALSE}
+# For a binary variable where 1 = Agree, 2 = Disagree:
+# Reverse coding swaps 1 and 2
+raw_data$ITEM_rev <- 3 - raw_data$ITEM
+# 3 - 1 = 2, 3 - 2 = 1
+```
+
+## Standardizing Continuous Covariates
+
+Continuous covariates (like age) should be standardized (z-scored) so that a one-unit change in the covariate corresponds to a one-standard-deviation change. This makes the magnitudes of regression coefficients and odds ratios comparable across covariates with different scales.
+
+```{r standardize}
+sim_data$age_z <- scale(sim_data$age)[, 1]
+
+cat("Age: mean =", round(mean(sim_data$age), 1), 
+    ", sd =", round(sd(sim_data$age), 1), "\n")
+cat("Age (standardized): mean =", round(mean(sim_data$age_z), 4),
+    ", sd =", round(sd(sim_data$age_z), 4), "\n")
+```
+
+## Dummy Coding Categorical Covariates
+
+Categorical covariates with more than two levels must be dummy-coded. LCA software treats all covariates as numeric; entering a 3-level factor as a single numeric variable (1, 2, 3) would incorrectly assume equal spacing between the levels.
+
+```{r dummy-code}
+# Education: 1 = secondary, 2 = some post-secondary, 3 = university
+# Create dummy variables with secondary as the reference category
+sim_data$edu_postsec <- ifelse(sim_data$education == 2, 1, 0)
+sim_data$edu_univ <- ifelse(sim_data$education == 3, 1, 0)
+
+cat("Education dummy codes:\n")
+table(sim_data$education, 
+      paste0("postsec=", sim_data$edu_postsec, ", univ=", sim_data$edu_univ))
+```
+
+---
+
+# Sorting and ID Management
+
+## Why Sorting Matters
+
+When LCA software generates output — posterior probabilities, class assignments — these are typically returned as vectors in the same row order as the input data. If you later need to merge the LCA results back into your master dataset (e.g., to add class assignments alongside other variables), you must be able to match rows reliably.
+
+Sorting the dataset by a unique subject ID before analysis ensures that any generated output can be aligned with the correct individual.
+
+```{r sort-id}
+# Sort by ID (already sequential in our simulated data)
+sim_data <- sim_data %>% arrange(id)
+
+# Verify: first 5 IDs
+head(sim_data$id, 5)
+```
+
+## Verification Cross-Check
+
+Print initial frequencies from your general statistics environment and compare them against what `poLCA` reports when it reads the data. If the numbers differ, you have a data import or coding error.
+
+```{r cross-check}
+cat("Frequencies to verify against poLCA output:\n\n")
+for (item in item_names) {
+  cat(item, ":\n")
+  print(table(sim_data[[item]], useNA = "ifany"))
+  cat("\n")
+}
+```
+
+---
+
+# Defining the poLCA Formula
+
+The formula object specifies which variables are indicators and which (if any) are covariates. For the unconditional (baseline) measurement model — used during the class enumeration phase — the formula includes only indicators on the left-hand side and `1` (intercept only, no covariates) on the right.
+
+```{r formula}
+f_lca <- cbind(REDIST, IMMIG, PRIDE, TRUST, TRAD, ENVIR) ~ 1
+```
+
+This formula will be used in Modules 5, 6, 7, and 8. The covariate formula (used in Module 10) will be defined later.
+
+---
+
+# Saving the Prepared Dataset
+
+Save the prepared dataset so that subsequent modules can load it directly without re-running the simulation.
+
+```{r save-data}
+# Save to an RData file
+save(sim_data, f_lca, item_names, true_probs, true_prevalences, true_labels,
+     file = "lca_prepared_data.RData")
+
+cat("Dataset saved to lca_prepared_data.RData\n")
+cat("Objects saved: sim_data, f_lca, item_names, true_probs,",
+    "true_prevalences, true_labels\n")
+```
+
+In subsequent modules, load this file at the beginning:
+
+```{r load-demo, eval=FALSE}
+load("lca_prepared_data.RData")
+```
+
+---
+
+# Descriptive Summary for the Methods Section
+
+The following summary contains all the information needed for the data preparation paragraph of your methods section. In a real study, you would adapt this template with your actual values.
+
+```{r methods-summary}
+cat("=== DATA PREPARATION SUMMARY ===\n\n")
+cat("Sample size (N):", nrow(sim_data), "\n")
+cat("Number of indicator variables:", length(item_names), "\n")
+cat("Indicator variable names:", paste(item_names, collapse = ", "), "\n")
+cat("Response categories per indicator: all binary (1 = Agree, 2 = Disagree)\n")
+cat("Total possible response patterns (W):", W_total, "\n")
+cat("Observed unique response patterns:", W_observed, "\n")
+cat("N/W ratio:", round(NW_ratio, 2), "\n")
+cat("Missing data on indicators: 0 cases\n")
+cat("Covariates: age (continuous, standardized), gender (binary),",
+    "education (3-level, dummy-coded)\n")
+cat("Missing data on covariates: 0 cases\n")
+cat("Software: R", R.version.string, ", poLCA version", 
+    as.character(packageVersion("poLCA")), "\n")
+```
+
+---
+
+# Summary
+
+At the end of this module, you should have:
+
+1. A clean data frame (`sim_data`) with all indicator variables coded as positive integers starting from 1.
+2. Verified marginal frequencies for all indicators — no unexpected values, no extreme skew.
+3. Assessed data sparseness via the $N/W$ ratio and confirmed it is adequate.
+4. Addressed missing data: `NA` coding for FIML on indicators; imputation plan for covariate missingness if needed.
+5. Standardized continuous covariates and dummy-coded categorical covariates.
+6. Defined the unconditional LCA formula (`f_lca`).
+7. Saved the prepared dataset for use in subsequent modules.
+
+Proceed to **Module 5: Model Estimation** to begin fitting latent class models.
+
+---
+
+# References
+
+Collins, L. M., & Lanza, S. T. (2010). *Latent class and latent transition analysis: With applications in the social, behavioral, and health sciences.* Wiley.
+
+Weller, B. E., Bowen, N. K., & Faubert, S. J. (2020). Latent class analysis: A guide to best practice. *Journal of Black Psychology, 46*(4), 287–311.
+
+van Buuren, S. (2018). *Flexible imputation of missing data* (2nd ed.). CRC Press.
+
+---
+
+```{r nav-footer, echo=FALSE, results='asis'}
+cat('<div style="margin-top:3em; padding-top:1em; border-top:1px solid #ddd; font-size:0.9em; color:#555;">
+<a href="index.html">&#8617; Course Index</a>
+</div>')
+```

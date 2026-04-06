@@ -1,0 +1,279 @@
+---
+title: "Module 2: Survey Design and Indicator Selection"
+subtitle: "LCA for Social Science Research"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    number_sections: true
+    theme: readable
+    highlight: tango
+    code_folding: show
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+# Purpose of This Module
+
+This module addresses how to select, design, and prepare the indicator variables that serve as the empirical foundation of a Latent Class Analysis. The classes LCA identifies are entirely a function of which items you include in the model. A misspecified indicator set — items that are theoretically irrelevant, dimensionally imbalanced, or inappropriately scaled — will produce classes that reflect measurement decisions rather than genuine population structure. No amount of statistical sophistication in later modules can correct a poorly designed indicator set.
+
+---
+
+# From Constructs to Indicators
+
+## Operationalization
+
+Operationalization is the process of translating a theoretical construct into measurable survey items. In LCA, this translation has specific requirements and constraints that differ from standard scale construction.
+
+In conventional psychometrics, when building a scale to measure a continuous latent variable (e.g., "authoritarianism"), you typically write many items that all tap the same underlying dimension, test their internal consistency (Cronbach's alpha), and combine them into a single composite score. The goal is redundancy — each item is an imperfect indicator of the same thing, and averaging reduces measurement error.
+
+In LCA, the logic is different. Your indicators are not measuring a single dimension. They are measuring the *configuration* of responses across multiple facets of a construct. Each indicator should tap a distinct aspect of the latent typology. You want diversity, not redundancy. If all your items measure the same narrow facet, the resulting classes will vary on that facet alone and will fail to capture the multidimensional configurations that typological research is designed to detect.
+
+This does not mean that indicators should be unrelated to each other. They must all be theoretically connected to the latent construct — but each should contribute unique information about a different facet of that construct.
+
+## The Indicator Selection Principle
+
+The guiding principle is: **each indicator should represent a distinct, theoretically meaningful facet of the latent typology you are trying to detect.**
+
+For a study of political belief systems, this means selecting items that span the relevant attitudinal domains — economic attitudes, cultural attitudes, institutional attitudes — rather than selecting multiple redundant items within a single domain.
+
+For a study of health risk behavior, this means including items covering different types of risk behavior — substance use, sexual behavior, physical risk-taking — rather than multiple items that all measure frequency of alcohol consumption.
+
+The theoretical framework you constructed in Module 1 should directly specify which facets your indicators need to cover and how many indicators each facet requires.
+
+---
+
+# Categorical Indicator Requirements
+
+## Why Indicators Must Be Categorical
+
+LCA models the joint distribution of categorical variables as a multinomial distribution. The model parameters — item-response probabilities and class prevalences — are defined in terms of discrete response categories. There are no distributional assumptions (such as multivariate normality) and no assumptions about the measurement level of the indicators beyond nominal.
+
+This makes LCA flexible in one sense: it can handle nominal, ordinal, and binary variables without requiring interval-level measurement. But it also imposes a hard constraint: all indicators must be categorical. Variables measured on a continuous scale (e.g., income in dollars, temperature ratings from 0 to 100) cannot be used directly.
+
+If your data include continuous indicators, you have three options:
+
+1. **Categorize the continuous variables.** Split continuous variables into categories (e.g., tertiles, quartiles, or theoretically meaningful cutpoints). This discards information but allows you to use LCA. This approach is defensible if the categorization is theoretically grounded — for example, splitting income into "below poverty line" / "middle income" / "high income" rather than using arbitrary percentile cuts.
+
+2. **Use Latent Profile Analysis (LPA) instead.** LPA is the continuous-indicator analogue of LCA. It identifies latent classes based on individuals' profiles of continuous responses. If most or all of your indicators are continuous, LPA is typically the more appropriate method. The `tidyLPA` or `mclust` packages in R support LPA.
+
+3. **Use a hybrid approach.** Some mixture modeling software (notably Mplus) can estimate models with both categorical and continuous indicators simultaneously. `poLCA` does not support this.
+
+## Levels of Measurement
+
+LCA indicators can be:
+
+- **Binary (dichotomous):** Two response categories. Examples: agree/disagree, yes/no, present/absent. These produce the simplest models and the most interpretable item-response probabilities.
+- **Polytomous (multicategory nominal):** Three or more unordered categories. Example: preferred political party (Labor / Conservative / Liberal Democrat / Other). Each category has its own item-response probability within each class.
+- **Ordinal (ordered categorical):** Three or more ordered categories. Example: 5-point Likert scale (strongly disagree to strongly agree). LCA treats ordinal variables as nominal — it does not impose or assume an ordering on the categories. Each level is modeled with its own independent probability.
+
+The distinction between polytomous and ordinal matters for interpretation (you know that "strongly agree" is more extreme than "agree") but not for estimation (LCA treats both identically).
+
+---
+
+# Recoding Decisions
+
+## Why Recoding Is Often Necessary
+
+Recoding — collapsing response categories into fewer groups — is one of the most consequential data preparation decisions in an LCA study. It directly affects model complexity, sparseness, estimation stability, and interpretability.
+
+There are several distinct reasons to recode:
+
+### 1. Reducing Sparseness
+
+The total number of cells in the contingency table formed by cross-tabulating all indicator variables equals the product of the number of response categories for each variable:
+
+$$W = \prod_{j=1}^{J} C_j$$
+
+where $J$ is the number of indicator variables and $C_j$ is the number of response categories for variable $j$.
+
+With six binary indicators: $W = 2^6 = 64$ cells.
+With six 5-point Likert items: $W = 5^6 = 15{,}625$ cells.
+With ten 5-point Likert items: $W = 5^{10} = 9{,}765{,}625$ cells.
+
+Your sample of (say) 800 respondents must populate these cells. With 64 cells, the average expected cell count is $800/64 = 12.5$ — adequate. With 15,625 cells, it is $800/15{,}625 = 0.05$ — catastrophically sparse. The vast majority of cells will be empty. This level of sparseness causes the likelihood-ratio $G^2$ statistic to become unreliable, destabilizes the EM algorithm, and can prevent models from converging.
+
+Collapsing 5-point Likert scales into binary or three-category variables is the most effective way to reduce sparseness while retaining the key information in the response patterns.
+
+### 2. Managing Skew
+
+If a response option is rarely endorsed — for example, only 2% of respondents select "strongly disagree" — the cells involving that category will have very low expected counts, even if the overall contingency table is not severely sparse. This creates localized estimation instability. Combining rare categories with adjacent ones (e.g., merging "strongly disagree" with "disagree") eliminates this problem.
+
+### 3. Simplifying Interpretation
+
+Item-response probabilities for a binary item are immediately interpretable: "72% of Class 1 members agree with this statement." For a 5-category item, you must interpret five separate probabilities per item per class — a 4-class model with ten 5-point items requires interpreting 200 probabilities. Collapsing to binary variables reduces this to 40.
+
+### 4. Aligning with Theoretical Distinctions
+
+In many social science applications, the theoretically relevant distinction is binary: does the respondent hold this attitude or not? Agree or disagree? Present or absent? The granularity of a 5- or 7-point Likert scale may exceed what the theory requires. If your theoretical framework distinguishes between people who support redistribution and people who do not, a binary recoding (support vs. do not support) directly operationalizes this distinction.
+
+## How to Recode
+
+### Dichotomization
+
+The most common recoding strategy collapses responses into two categories. Common approaches:
+
+- **Top-box:** Code "agree" and "strongly agree" as 1, all others as 2. This captures whether the respondent leans toward agreement.
+- **Midpoint split:** Code responses above the scale midpoint as 1, at or below as 2. This divides the sample at the neutral point.
+- **Theoretically motivated cutpoint:** Use a cutpoint that corresponds to a meaningful theoretical threshold (e.g., "risk present" vs. "risk absent" for behavioral items).
+
+There is no universally correct approach. The choice must be justified by your theoretical framework and the empirical distribution of responses.
+
+### Trichotomization
+
+Collapsing into three categories (e.g., disagree / neutral / agree) preserves the distinction between positive, neutral, and negative positions. This is appropriate when the neutral category is theoretically meaningful — for example, if you expect some latent classes to be characterized by ambivalence or indifference rather than by a clear stance.
+
+### General Principles
+
+- Always recode before running LCA, not after.
+- Consider reverse-coding items so that a consistent direction (e.g., higher value = more conservative, or higher value = risk present) aids interpretation.
+- Report the original scale and the recoding scheme in your methods section.
+- If you are unsure about the best recoding, consider running preliminary analyses with different coding schemes and comparing the resulting class profiles. If the same substantive classes emerge regardless of how you recode, the results are robust.
+
+---
+
+# Dimensional Balance
+
+## The Problem
+
+If your indicator set is dominated by items from a single substantive domain, the resulting classes will be disproportionately defined by that domain. This is a measurement artifact, not a substantive finding.
+
+Consider a study of political attitudes that includes four items measuring views on immigration, one item on redistribution, and one item on institutional trust. Any LCA run on this data will produce classes that are primarily differentiated by immigration attitudes, because immigration has four times the statistical weight. If you then label the classes as "political types," you are overclaiming — you have identified immigration-attitude types, not general political types.
+
+## The Solution
+
+Dimensional balance means allocating indicators roughly evenly across the theoretically relevant subdomains of your construct. If your theoretical framework specifies three domains (economic, cultural, institutional), you should include approximately the same number of indicators for each domain.
+
+Perfect balance is rarely achievable. Some domains may have more available items than others, or some items may cross-load on multiple domains. But you should be aware of the imbalance and report it as a limitation. If one domain has substantially more items than others, consider whether you can add items to the underrepresented domains, or whether you should drop redundant items from the overrepresented domain.
+
+Note: this is a design-level decision. You must address it before data collection (by selecting or designing appropriate items) or before analysis (by selecting which items from an existing dataset to include). It cannot be corrected statistically.
+
+---
+
+# How Many Indicators?
+
+## No Fixed Rule
+
+There is no strict consensus in the methodological literature on the optimal number of indicator variables. Published studies have used anywhere from four to over twenty. The appropriate number depends on the complexity of the latent construct, the number of classes you expect to find, and your sample size.
+
+## Practical Guidance
+
+**Minimum:** A hard lower bound exists for model identification. With $C$ classes and $J$ binary indicators, the number of freely estimated parameters is $C \times J + (C - 1)$ (item-response probabilities plus class prevalences minus constraints). The number of unique data points is $2^J - 1$. The model is identifiable only if the number of data points exceeds the number of parameters. For binary indicators and 2 classes, you need at least 3 indicators; for 3 classes, at least 4; for 4 classes, at least 5. In practice, you need substantially more than these minimums for stable estimation.
+
+**Practical range:** For most social science applications with binary indicators, 5 to 15 indicators is a workable range. Fewer than 5 often produces classes that are poorly separated or trivially differentiated. More than 15 creates very large contingency tables and may require very large samples to avoid sparseness.
+
+**More indicators generally improve results** — they provide more information to differentiate classes, increase latent class separation, and produce more precisely estimated item-response probabilities. But each additional indicator also increases the contingency table size exponentially, so there is a tradeoff between measurement richness and sparseness.
+
+**Polytomous indicators count for more.** A single 5-category item contributes as much to the contingency table as $\log_2(5) \approx 2.3$ binary items. Including many polytomous items with many response categories can rapidly create intractable sparseness. If you are using polytomous indicators, you may need to use fewer of them.
+
+---
+
+# The poLCA Coding Requirement
+
+This point was introduced in Module 0 but warrants emphasis because it is the most frequent source of errors for new users:
+
+**All indicator variables must be coded as positive integers starting from 1.**
+
+| Scale | Incorrect Coding | Correct Coding for poLCA |
+|-------|-----------------|------------------------|
+| Binary (agree/disagree) | 0, 1 | 1, 2 |
+| Three-category (disagree/neutral/agree) | 0, 1, 2 | 1, 2, 3 |
+| Five-point Likert | 0, 1, 2, 3, 4 | 1, 2, 3, 4, 5 |
+| Yes/No | "Yes", "No" | 1, 2 |
+
+If any indicator contains a `0`, `poLCA` will produce an error or incorrect results. Character-coded variables must be converted to numeric. Factor variables must be converted to their underlying integer codes (using `as.numeric()`) and verified.
+
+---
+
+# Worked Example: Indicator Design
+
+## The Indicators
+
+For our study of political belief systems, we select six binary indicators spanning three theoretical subdomains:
+
+| Variable | Survey Item | Original Scale | Recoding | Domain |
+|----------|------------|---------------|----------|--------|
+| `REDIST` | "The government should reduce income differences between rich and poor" | 5-point Likert | Agree/Strongly Agree → 1; else → 2 | Economic |
+| `IMMIG` | "Immigration to [country] should be more strictly restricted" | 5-point Likert | Agree/Strongly Agree → 1; else → 2 | Cultural/National |
+| `PRIDE` | "I am proud of [country's] history" | 5-point Likert | Agree/Strongly Agree → 1; else → 2 | Cultural/National |
+| `TRUST` | "Most of the time, the government can be trusted to do the right thing" | 4-point scale | Agree/Strongly Agree → 1; else → 2 | Institutional |
+| `TRAD` | "Traditional family values should be upheld and preserved" | 5-point Likert | Agree/Strongly Agree → 1; else → 2 | Cultural/National |
+| `ENVIR` | "Stricter environmental regulations are needed even if they cost jobs" | 5-point Likert | Agree/Strongly Agree → 1; else → 2 | Economic |
+
+## Dimensional Balance Assessment
+
+The indicators span three subdomains:
+
+- Economic: 2 items (REDIST, ENVIR)
+- Cultural/National: 3 items (IMMIG, PRIDE, TRAD)
+- Institutional: 1 item (TRUST)
+
+The set is weighted toward cultural/national attitudes. This means the resulting classes will be somewhat more sensitive to cultural attitude variation than to economic or institutional variation. We acknowledge this as a limitation and note that future studies should include additional economic and institutional items to achieve better balance.
+
+## Contingency Table Size
+
+With six binary indicators: $W = 2^6 = 64$ unique response patterns. With a target sample size of 800, the average expected cell count is $800 / 64 = 12.5$. This is comfortably above the threshold where sparseness becomes problematic (roughly $N/W < 5$).
+
+## Recoding Justification
+
+All items are dichotomized using a top-box approach (agree/strongly agree vs. all else). This is justified on three grounds:
+
+1. **Theoretical:** Our theoretical framework distinguishes between people who hold an attitude and people who do not. The degree of agreement (moderate vs. strong) is not theoretically central to the typological distinction we are investigating.
+2. **Sparseness:** Retaining the original 5-point scales would produce $5^6 = 15{,}625$ cells — far too many for a sample of 800.
+3. **Interpretability:** Binary item-response probabilities (e.g., "83% of Class 2 members agree that immigration should be restricted") are immediately interpretable, whereas 5-category probability profiles require substantially more cognitive effort to parse.
+
+---
+
+# Pilot Testing and Item Screening
+
+## Before Data Collection
+
+If you are designing a new survey instrument rather than analyzing secondary data, you should pilot test your items before the main data collection. A pilot sample of 50–100 respondents from the target population is typically sufficient to assess:
+
+- **Comprehension:** Do respondents understand the items as intended?
+- **Marginal distributions:** Are any items so extremely skewed that nearly everyone gives the same response? If 98% of pilot respondents agree with an item, it provides virtually no discriminatory information for LCA and should be revised or dropped.
+- **Missing data rates:** Do any items have unusually high nonresponse? This may indicate ambiguity, sensitivity, or survey fatigue.
+
+## With Secondary Data
+
+If you are using an existing dataset (e.g., the European Social Survey, the General Social Survey, the World Values Survey), the items are fixed and you cannot pilot test. However, you should still screen the items before analysis:
+
+- Examine marginal distributions. Flag items with over 95% or under 5% endorsement.
+- Check for missingness patterns. Items with high missingness may need to be dropped or imputed.
+- Verify that the items collectively span the theoretical domains your framework specifies. If the available items are too narrowly focused, acknowledge this limitation.
+
+---
+
+# Summary
+
+Before proceeding to Module 3, verify the following for your study:
+
+- Each indicator taps a distinct, theoretically relevant facet of your latent construct.
+- All indicators are categorical (or have been recoded to categorical).
+- The indicator set is dimensionally balanced, or the imbalance is acknowledged and justified.
+- The total contingency table size ($W$) is manageable given your sample size ($N/W > 5$ as a rough guideline).
+- All variables are coded as positive integers starting from 1.
+- The recoding scheme is theoretically justified and documented.
+- You have assessed marginal distributions and screened for extreme skew or high missingness.
+
+---
+
+# References
+
+Bonikowski, B. (2021). Mapping culture with latent class analysis: A response to Eger and Hjerm. *Nations and Nationalism, 27*(4), 926–941.
+
+Collins, L. M., & Lanza, S. T. (2010). *Latent class and latent transition analysis: With applications in the social, behavioral, and health sciences.* Wiley.
+
+Weller, B. E., Bowen, N. K., & Faubert, S. J. (2020). Latent class analysis: A guide to best practice. *Journal of Black Psychology, 46*(4), 287–311.
+
+---
+
+```{r nav-footer, echo=FALSE, results='asis'}
+cat('<div style="margin-top:3em; padding-top:1em; border-top:1px solid #ddd; font-size:0.9em; color:#555;">
+<a href="index.html">&#8617; Course Index</a>
+</div>')
+```

@@ -1,0 +1,62 @@
+---
+title: "LCA for Social Science Research"
+subtitle: "Course Module Index"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: false
+    theme: readable
+    highlight: tango
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+This course provides a complete, applied introduction to Latent Class Analysis (LCA) using R and the `poLCA` package. The modules follow the full LCA pipeline — from environment setup and research design through estimation, model selection, classification, interpretation, validation, covariate analysis, and reporting — supported by simulated and real data examples.
+
+---
+
+## Modules
+
+| Module | Title | Topic |
+|--------|-------|-------|
+| [Module 0](Module_00_Setup.html) | R Environment Setup | Package installation, poLCA orientation |
+| [Module 1](Module_01_Research_Design.html) | Research Design Foundations | When to use LCA; theory and research questions |
+| [Module 2](Module_02_Indicators.html) | Indicator Selection | Variable requirements, measurement quality |
+| [Module 3](Module_03_Sampling.html) | Sample Size and Sampling | Power, N requirements, Monte Carlo evidence |
+| [Module 4](Module_04_Data_Preparation.html) | Data Preparation | Import, coding, recoding, missing data |
+| [Module 5](Module_05_Estimation.html) | Model Estimation | EM algorithm, starting values, convergence |
+| [Module 6](Module_06_Selection.html) | Model Enumeration and Selection | BIC, AIC, BLRT, parsimony |
+| [Module 7](Module_07_Classification.html) | Classification Quality | Entropy, ALCPP, posterior probabilities |
+| [Module 8](Module_08_Interpretation.html) | Profile Interpretation | Labeling classes, visualization |
+| [Module 9](Module_09_Validation.html) | Validation | Construct validity, split-sample replication |
+| [Module 10](Module_10_Covariates.html) | Covariates and Distal Outcomes | Three-step approach, BCH correction |
+| [Module 11](Module_11_Reporting.html) | Reporting Standards | Methods section, tables, figures, checklists |
+| [Module 12](Module_12_Extensions.html) | Extensions | LPA, multilevel LCA, longitudinal LCA |
+| [Module 13](Module_13_Applied_Lab.html) | Applied Lab | Real data examples: cheating, election surveys |
+| [Module 14](Module_14_Capstone.html) | Capstone Exercises | Guided exercises across complete datasets |
+
+---
+
+## Recommended Sequence
+
+Work through the modules in order (0 → 14). Modules 4 through 11 are sequentially dependent: each module loads data and model objects saved by the previous one. Modules 12, 13, and 14 are self-contained and can be read independently, though Module 14 exercises assume familiarity with the full pipeline.
+
+---
+
+## Software
+
+- **R** ≥ 4.0 — [https://cran.r-project.org/](https://cran.r-project.org/)
+- **RStudio** (recommended) — [https://posit.co/download/rstudio-desktop/](https://posit.co/download/rstudio-desktop/)
+- Core packages: `poLCA`, `tidyverse`, `knitr`, `kableExtra`, `nnet`, `mice`, `haven`
+
+---
+
+## Reference
+
+Linzer, D. A., & Lewis, J. B. (2011). poLCA: An R package for polytomous variable latent class analysis. *Journal of Statistical Software, 42*(10), 1–29.
+
+---
+
+*Generated with R and rmarkdown.*

@@ -1,0 +1,647 @@
+---
+title: "Module 10: Incorporating Covariates — The Three-Step Approach"
+subtitle: "LCA for Social Science Research"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    number_sections: true
+    theme: readable
+    highlight: tango
+    code_folding: show
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE, warning = FALSE, message = FALSE,
+  fig.width = 8, fig.height = 5, fig.align = "center"
+)
+```
+
+# Purpose of This Module
+
+If your research question asks whether sociodemographic characteristics predict latent class membership, you must model covariates formally. This module explains why the historically common one-step approach is flawed, presents the modern three-step alternative, and provides a full implementation in R using `poLCA` and `nnet::multinom`. It also covers the assumptions underlying covariate models, the practical mechanics of coding and preparing covariate data, and the interpretation of multinomial logistic regression output including odds ratios.
+
+> **Prerequisites:** This module loads objects from Modules 4, 6, and 7. Render those modules first.
+
+```{r load}
+load("lca_prepared_data.RData")
+load("lca_selected_model.RData")
+load("lca_diagnostics.RData")
+library(poLCA)
+library(nnet)
+library(tidyverse)
+library(knitr)
+library(kableExtra)
+```
+
+---
+
+# Why the One-Step Approach Is Flawed
+
+## What It Does
+
+In the one-step approach, covariates are included in the LCA formula during the initial class enumeration. The model simultaneously estimates the latent classes and the covariate effects:
+
+```{r one-step-demo, eval=FALSE}
+# ONE-STEP APPROACH (NOT RECOMMENDED)
+f_onestep <- cbind(REDIST, IMMIG, PRIDE, TRUST, TRAD, ENVIR) ~ age_z + female
+model_onestep <- poLCA(f_onestep, data = sim_data, nclass = 4, 
+                        nrep = 50, verbose = FALSE)
+```
+
+## Why It Is Problematic
+
+When covariates are included during class enumeration, they participate in defining the classes. The item-response probabilities — the parameters that constitute the measurement model — are estimated conditional on the covariates. This means:
+
+1. The definition of the classes changes depending on which covariates you include. Add a covariate, and the classes shift. Remove it, and they shift again. The classes are not stable constructs; they are contingent on the covariate specification.
+
+2. The covariates can alter the number of classes selected. A model that favors 4 classes without covariates might favor 3 or 5 with covariates, not because the true population structure changed, but because the covariates absorbed some of the variance that previously distinguished classes.
+
+3. The relationship between the covariates and class membership becomes confounded with the measurement model. You cannot cleanly separate "what the classes are" from "who belongs to them."
+
+Modern best practice unequivocally recommends against the one-step approach for these reasons.
+
+---
+
+# The Modern Three-Step Approach
+
+## Overview
+
+The three-step approach keeps the measurement model (class definition) and the structural model (covariate effects) separate:
+
+**Step 1: Estimate the unconditional measurement model.** Determine the number of classes and the item-response probabilities using only the indicator variables, with no covariates. This is everything accomplished in Modules 5–8.
+
+**Step 2: Assign individuals to classes.** Based on the posterior probabilities from the Step 1 model, assign each individual to their most likely class. Record the full posterior probability vector.
+
+**Step 3: Predict class membership from covariates.** Using the class assignments from Step 2 as the outcome variable, fit a multinomial logistic regression with your covariates as predictors.
+
+The key principle is that the measurement model parameters from Step 1 are never altered by the covariates. The classes are defined first, and the covariates are introduced afterward.
+
+## Variants of the Three-Step Approach
+
+There are several specific implementations of the three-step concept, differing in how they handle classification uncertainty:
+
+1. **Modal assignment (naive three-step):** Assign each individual to their single most likely class and run multinomial logistic regression on this categorical variable. This is the simplest implementation and is what `poLCA` + `nnet` can achieve. It ignores classification uncertainty entirely. Acceptable when entropy is high (above .80); biased otherwise.
+
+2. **BCH method (Bolck, Croon, & Hagenaars):** Accounts for classification uncertainty by weighting the covariate regression using the posterior probabilities. This corrects for the attenuation bias introduced by modal assignment. Implemented in Mplus and Latent GOLD but not natively in `poLCA`.
+
+3. **ML three-step (Vermunt, 2010):** Fixes the measurement parameters from Step 1 and estimates only the covariate effects while accounting for classification error via a correction matrix derived from the posterior probabilities. Also not natively available in `poLCA`.
+
+In this module, we implement the modal assignment approach and discuss its limitations. If your entropy is below .80, you should strongly consider using Mplus for the BCH or ML correction.
+
+---
+
+# Step 1: The Unconditional Model
+
+The unconditional model was already estimated and selected in Modules 5–8. We use it directly.
+
+```{r step1}
+cat("Step 1: Unconditional model\n")
+cat("  Classes:", length(best_model$P), "\n")
+cat("  BIC:", round(best_model$bic, 2), "\n")
+cat("  Entropy:", round(diagnostics$entropy, 4), "\n")
+```
+
+---
+
+# Step 2: Class Assignment
+
+Assign each individual to the class for which their posterior probability is highest. Also store the full posterior vector — if you later implement the BCH correction (manually or in Mplus), you will need it.
+
+```{r step2}
+sim_data$lca_class <- factor(best_model$predclass)
+
+# Store posterior probabilities
+for (c in 1:length(best_model$P)) {
+  sim_data[[paste0("post_", c)]] <- best_model$posterior[, c]
+}
+
+cat("Step 2: Class assignments\n")
+cat("  Class distribution:\n")
+print(table(sim_data$lca_class))
+cat("\n  Class proportions:\n")
+print(round(prop.table(table(sim_data$lca_class)), 3))
+```
+
+---
+
+# Step 3: Multinomial Logistic Regression
+
+## Preparing Covariates
+
+Before running the regression, covariates must be properly prepared:
+
+**Continuous covariates** should be standardized (z-scored) so that a one-unit change corresponds to one standard deviation. This makes odds ratios comparable across covariates measured on different scales.
+
+**Categorical covariates** must be dummy-coded. LCA software and `nnet::multinom` treat all predictors as numeric. A three-level factor entered as a single numeric variable (1, 2, 3) would impose an equal-spacing assumption between levels. Dummy coding avoids this.
+
+```{r prepare-covariates}
+# Standardize age (already done in Module 4, but verify)
+sim_data$age_z <- scale(sim_data$age)[, 1]
+
+# Dummy-code education (reference = secondary)
+sim_data$edu_postsec <- ifelse(sim_data$education == 2, 1, 0)
+sim_data$edu_univ <- ifelse(sim_data$education == 3, 1, 0)
+
+cat("Covariate preparation complete.\n")
+cat("  age_z: standardized (mean=0, sd=1)\n")
+cat("  female: binary (0=male, 1=female)\n")
+cat("  edu_postsec: dummy (1=post-secondary, 0=else)\n")
+cat("  edu_univ: dummy (1=university, 0=else)\n")
+```
+
+## Running the Multinomial Logistic Regression
+
+`nnet::multinom` estimates a multinomial logistic regression using the first factor level as the reference category. The coefficients represent the log-odds of belonging to each non-reference class versus the reference class, as a function of the covariates.
+
+```{r step3}
+# Set reference class (the first level of the factor)
+# You may want to relevel to choose a theoretically meaningful reference
+# sim_data$lca_class <- relevel(sim_data$lca_class, ref = "1")
+
+multi_model <- multinom(lca_class ~ age_z + female + edu_postsec + edu_univ,
+                         data = sim_data, trace = FALSE)
+
+# Display summary
+cat("=== MULTINOMIAL LOGISTIC REGRESSION SUMMARY ===\n\n")
+summary(multi_model)
+```
+
+## Choosing the Reference Class
+
+The choice of reference class is statistically arbitrary — it does not affect hypothesis tests, overall model fit, or the substantive conclusions. However, it determines how the coefficients are presented and interpreted. Each coefficient represents the log-odds of a specific class *relative to the reference class*.
+
+Recommendations for choosing the reference:
+
+- **Largest class:** Maximizes statistical power for comparisons.
+- **Theoretically "neutral" or "baseline" class:** If one class represents a normative or modal profile, using it as the reference makes the comparisons substantively intuitive.
+- **Multiple specifications:** If you need all pairwise comparisons, re-estimate the model with different reference classes, or use `emmeans` or `car::linearHypothesis` to compute contrasts.
+
+```{r change-reference, eval=FALSE}
+# To change reference class:
+sim_data$lca_class <- relevel(sim_data$lca_class, ref = "2")
+multi_model_alt <- multinom(lca_class ~ age_z + female + edu_postsec + edu_univ,
+                             data = sim_data, trace = FALSE)
+```
+
+---
+
+# Interpreting the Output
+
+## Log-Odds Coefficients
+
+The raw output of `multinom` provides log-odds coefficients. These are difficult to interpret directly. A positive coefficient means that a one-unit increase in the covariate increases the log-odds of being in the target class (versus the reference class). A negative coefficient means it decreases the log-odds.
+
+## Odds Ratios
+
+To make the results interpretable, exponentiate the coefficients to obtain odds ratios:
+
+```{r odds-ratios}
+# Extract and exponentiate coefficients
+coef_table <- coef(multi_model)
+or_table <- exp(coef_table)
+
+kable(round(or_table, 3),
+      caption = "Odds Ratios: Predictors of Class Membership (vs. Reference Class)") %>%
+  kable_styling(full_width = FALSE)
+```
+
+**Interpreting odds ratios:**
+
+- **OR = 1.00:** The covariate has no effect on the odds of being in this class vs. the reference.
+- **OR > 1.00:** A one-unit increase in the covariate is associated with *higher* odds of being in this class.
+- **OR < 1.00:** A one-unit increase is associated with *lower* odds.
+
+Because `age_z` is standardized, a one-unit increase = one standard deviation increase in age. Because `female` is binary, the OR compares women to men. Because `edu_postsec` and `edu_univ` are dummies, the ORs compare each education level to the reference level (secondary or less).
+
+**Interpreting the intercept:** The output also produces an intercept ($\beta_0$) for each non-reference class. When exponentiated, the intercept becomes the baseline odds ($e^{\beta_0}$): the odds of belonging to the target class versus the reference class when all covariates equal zero. If you have standardized your continuous covariates (so their mean is 0), the exponentiated intercept represents the odds at the sample mean of those covariates. If a binary covariate like gender is coded 0/1, the intercept represents the odds for the reference gender category (coded 0) at the mean of continuous covariates.
+
+### Writing Up Odds Ratios: A Model Paragraph
+
+Sociology students frequently struggle to translate odds ratio tables into written text. Here is what a completed interpretation paragraph should look like:
+
+> Using Class 1 ("Progressive") as the reference category, multinomial logistic regression revealed that age was a significant predictor of class membership. A one-standard-deviation increase in age was associated with 1.45 times the odds of belonging to the "Conservative" class versus the "Progressive" class (OR = 1.45, 95% CI [1.12, 1.88], p = .005). In other words, older respondents were significantly more likely to hold conservative rather than progressive political attitudes. Gender did not significantly predict class membership for any comparison (all p > .10). Having a university degree was associated with 0.62 times the odds of belonging to the "Communitarian" class versus the "Progressive" class (OR = 0.62, 95% CI [0.41, 0.93], p = .022), indicating that higher education was associated with lower odds of the communitarian profile relative to the progressive profile.
+
+Note the structure: each significant effect is reported with the odds ratio, the 95% confidence interval, the p-value, and a plain-language interpretation. Non-significant effects are acknowledged. The reference class is stated explicitly at the beginning. Causal language ("caused," "determined") is avoided in favor of associational language ("was associated with," "was more likely to").
+
+## Confidence Intervals
+
+```{r confidence-intervals}
+# Compute 95% confidence intervals for odds ratios
+ci <- confint(multi_model, level = 0.95)
+
+# Display for each class comparison
+for (class_name in rownames(coef_table)) {
+  cat(sprintf("\n--- Class %s vs. Reference ---\n", class_name))
+  class_ci <- ci[, , class_name]
+  or_ci <- exp(class_ci)
+  
+  result <- data.frame(
+    Covariate = colnames(coef_table),
+    OR = round(or_table[class_name, ], 3),
+    CI_lower = round(or_ci[, 1], 3),
+    CI_upper = round(or_ci[, 2], 3),
+    Significant = ifelse(or_ci[, 1] > 1 | or_ci[, 2] < 1, "*", "")
+  )
+  
+  print(kable(result, row.names = FALSE) %>% kable_styling(full_width = FALSE))
+}
+
+cat("\n* = 95% CI excludes 1.00 (statistically significant at p < .05)\n")
+```
+
+## Statistical Significance
+
+A covariate is statistically significant at the .05 level if the 95% confidence interval for its odds ratio does not include 1.00. Equivalently, you can compute Wald z-statistics and p-values:
+
+```{r wald-tests}
+# Wald z-tests
+z_stats <- summary(multi_model)$coefficients / summary(multi_model)$standard.errors
+p_values <- 2 * (1 - pnorm(abs(z_stats)))
+
+cat("=== WALD Z-TESTS ===\n\n")
+cat("z-statistics:\n")
+print(round(z_stats, 3))
+cat("\np-values:\n")
+print(round(p_values, 4))
+```
+
+---
+
+# The Measurement Invariance Assumption
+
+## What It Means
+
+When you include a variable as a covariate, you implicitly assume measurement invariance: the item-response probabilities that define the classes are identical for all individuals, regardless of their covariate values. The classes mean the same thing for men and women, for young and old, for all education levels.
+
+This is a strong assumption. If it is violated — if, for example, men and women interpret the survey items fundamentally differently, so that the same response pattern indicates a different latent class for each gender — then the covariate model is misspecified.
+
+## When to Suspect Violation
+
+Suspect measurement invariance violation when:
+
+- The items contain culturally or demographically sensitive content that might be interpreted differently by different groups.
+- Prior research suggests that the factor structure or latent structure of the items differs across groups.
+- Your theoretical framework predicts that the construct itself (not just its prevalence) differs across groups.
+
+## What to Do
+
+If you suspect a variable violates measurement invariance, it should not be treated as a covariate. Instead, it should be treated as a grouping variable in a multiple-group LCA, which allows you to explicitly test whether the item-response probabilities are the same across groups.
+
+Multiple-group LCA is not supported by `poLCA`. If measurement invariance testing is essential to your research question, use Mplus or Latent GOLD.
+
+---
+
+# Missing Data on Covariates
+
+## The Problem
+
+While `poLCA` handles missing indicator data via FIML, cases with missing covariate data are dropped from the analysis. If covariate missingness is non-trivial (above 5%), this deletion can:
+
+- Reduce your effective sample size substantially.
+- Bias your results if missingness is related to the outcome (class membership).
+- Reduce statistical power.
+
+## The Solution: Multiple Imputation
+
+Use the `mice` package to impute missing covariate values before running the covariate model.
+
+```{r mi-demo, eval=FALSE}
+library(mice)
+
+# Examine missingness pattern
+md.pattern(sim_data[, c("age", "female", "education")])
+
+# Impute (m = 20 datasets)
+imp <- mice(sim_data[, c("age", "female", "education")], 
+            m = 20, method = "pmm", seed = 123, printFlag = FALSE)
+
+# For each imputed dataset: standardize age, dummy-code education,
+# run multinomial regression, then pool results using Rubin's rules
+# (mice::with and mice::pool support this workflow)
+
+# Simplified example for one imputed dataset:
+completed <- complete(imp, 1)
+completed$age_z <- scale(completed$age)[, 1]
+completed$edu_postsec <- ifelse(completed$education == 2, 1, 0)
+completed$edu_univ <- ifelse(completed$education == 3, 1, 0)
+completed$lca_class <- sim_data$lca_class
+
+model_imp <- multinom(lca_class ~ age_z + female + edu_postsec + edu_univ,
+                       data = completed, trace = FALSE)
+```
+
+---
+
+# Addressing Sparseness in Covariate Models
+
+## The Problem of Divergent Odds Ratios
+
+When you introduce covariates into the covariate model, certain combinations of covariate values and latent class membership may contain zero individuals. For example, if no respondents with a university degree are classified into a particular small class, the odds ratio for university education predicting membership in that class will diverge to infinity — the logistic regression cannot estimate a finite coefficient for a cell with zero observations. This causes the estimation to break down.
+
+This covariate-specific sparseness is distinct from the indicator-level sparseness discussed in Module 4. It arises not from the contingency table of indicator variables but from the cross-tabulation of covariate levels with class assignments.
+
+## The Flattening Prior
+
+To stabilize covariate model estimation under sparseness, you can apply a data-derived Bayesian "flattening prior." This technique adds a very small amount of pseudo-data to the empty covariate-class cells, smoothing the logistic regression parameters without distorting the underlying measurement model (the item-response probabilities and class prevalences from Step 1 remain fixed).
+
+This prior is available in Latent GOLD and Mplus. In `poLCA` and `nnet`, sparseness in the covariate model manifests as extreme coefficient estimates (very large or very small odds ratios), wide confidence intervals, or convergence warnings. If you encounter these symptoms:
+
+1. Check whether any covariate-class cells have zero or near-zero observations.
+2. Consider collapsing covariate categories (e.g., combining rare education levels).
+3. Consider the binomial simplification (below): combining small classes reduces the number of cells and alleviates sparseness.
+
+---
+
+# Causal Language Warning
+
+The multinomial logistic regression in Step 3 models statistical associations between covariates and class membership. It does not establish causation. You should not say that age "causes" membership in a particular class, or that education "determines" class membership. Use language like "is associated with," "predicts," or "is related to." This is especially important in cross-sectional designs where temporal ordering is ambiguous.
+
+---
+
+# Binomial Logistic Regression: A Simplification
+
+If your research question focuses on a specific class — for example, "what predicts membership in the 'communitarian' class?" — you can simplify the multinomial regression to a binomial logistic regression by dichotomizing the outcome: target class (1) vs. all other classes combined (0).
+
+```{r binomial-demo}
+# Example: predict membership in Class 3 (assuming it's the communitarian class)
+sim_data$target_class <- ifelse(sim_data$lca_class == 3, 1, 0)
+
+binom_model <- glm(target_class ~ age_z + female + edu_postsec + edu_univ,
+                    data = sim_data, family = binomial)
+
+cat("=== BINOMIAL LOGISTIC REGRESSION: CLASS 3 vs. ALL OTHERS ===\n\n")
+
+# Odds ratios with CI
+binom_or <- exp(cbind(OR = coef(binom_model), confint(binom_model)))
+kable(round(binom_or, 3),
+      caption = "Odds Ratios: Predictors of Class 3 Membership") %>%
+  kable_styling(full_width = FALSE)
+```
+
+This approach is useful when multinomial models encounter estimation problems due to small class sizes (sparseness), or when you have a specific a priori hypothesis about one class.
+
+---
+
+# Distal Outcomes: Predicting Outcomes from Class Membership
+
+## The Reverse Direction
+
+Modules up to this point have addressed covariates that predict class membership — the question "who belongs to which class?" There is an equally important question that runs in the opposite direction: "does class membership predict an outcome?" This is the distal outcome problem.
+
+A distal outcome is a variable that is theoretically downstream from latent class membership — an attitude, behavior, or life outcome that the classes should differentially predict if they are substantively meaningful. In social science research, distal outcomes are central to demonstrating that the identified typology has real-world consequences. Examples:
+
+- **Political sociology:** Do political belief system classes differentially predict voter turnout, party choice, or protest participation?
+- **Criminology:** Do delinquency profile classes predict adult criminal justice involvement?
+- **Health sociology:** Do health behavior classes predict chronic disease outcomes, healthcare utilization, or mortality?
+- **Stratification research:** Do inequality belief system classes predict support for redistributive policies, controlling for income?
+
+Distal outcome analysis is where the typological structure identified by LCA becomes analytically useful — it moves from description ("here are the types") to explanation ("the types predict these outcomes").
+
+## The Classification Error Problem (Again)
+
+The distal outcome problem is subject to the same classification error issue as the covariate problem, but in reverse. If you naively assign individuals to their most likely class and then regress the outcome on this class variable, the associations between class membership and the outcome are attenuated — biased toward zero. The magnitude of this attenuation depends on entropy: with high entropy (>.90), attenuation is minor; with low entropy (<.70), it is severe.
+
+## Approaches to Distal Outcomes
+
+### Naive Classify-Analyze (Acceptable When Entropy Is High)
+
+Assign each individual to their most likely class and run standard regression or ANOVA with the class variable as the predictor:
+
+```{r distal-naive}
+# Example: Does class membership predict a continuous outcome?
+# Simulate a distal outcome correlated with true class
+set.seed(99)
+sim_data$pol_participation <- rnorm(nrow(sim_data), mean = 0, sd = 1)
+# Add class-specific shifts (in real data, this correlation would be natural)
+sim_data$pol_participation <- sim_data$pol_participation + 
+  c(0.5, -0.3, 0.1, -0.4)[as.numeric(sim_data$lca_class)] * 0.8
+
+# One-way ANOVA: class predicting participation
+anova_distal <- aov(pol_participation ~ lca_class, data = sim_data)
+cat("=== DISTAL OUTCOME: POLITICAL PARTICIPATION ===\n\n")
+cat("One-way ANOVA:\n")
+print(summary(anova_distal))
+
+# Pairwise comparisons
+cat("\nPairwise means (Tukey HSD):\n")
+tukey_distal <- TukeyHSD(anova_distal)
+print(round(tukey_distal$lca_class, 3))
+```
+
+```{r distal-means}
+# Class-specific means and standard deviations
+distal_summary <- sim_data %>%
+  group_by(lca_class) %>%
+  summarise(
+    n = n(),
+    mean = mean(pol_participation),
+    sd = sd(pol_participation),
+    se = sd / sqrt(n),
+    .groups = "drop"
+  )
+
+kable(distal_summary, digits = 3,
+      caption = "Political Participation by Latent Class") %>%
+  kable_styling(full_width = FALSE)
+```
+
+### Multivariate Regression with Class as Predictor
+
+When you want to estimate the effect of class membership on an outcome while controlling for other variables:
+
+```{r distal-regression}
+# OLS regression: outcome predicted by class + covariates
+distal_model <- lm(pol_participation ~ lca_class + age_z + female, data = sim_data)
+
+cat("=== REGRESSION: Participation ~ Class + Covariates ===\n\n")
+summary(distal_model)
+```
+
+**Interpreting the output:** Each class coefficient represents the mean difference in the outcome between that class and the reference class, adjusted for the covariates. A significant coefficient means class membership predicts the outcome above and beyond the effects of age and gender.
+
+### The BCH Method for Distal Outcomes
+
+For rigorous analysis when entropy is not high, the BCH method can be applied to distal outcomes as well as covariates. The procedure accounts for classification uncertainty by using a weighting matrix derived from the posterior probabilities. The class-specific means on the distal outcome are estimated as weighted averages, where the weights reflect classification uncertainty rather than deterministic assignments.
+
+This implementation requires Mplus (`AUXILIARY` option with the `BCH` specification) or manual matrix algebra in R. The manual approach:
+
+```{r bch-distal, eval=FALSE}
+# Manual BCH correction for distal outcome means
+# Step 1: Compute the N x K classification error matrix (D)
+posterior <- best_model$posterior
+N <- nrow(posterior)
+K <- ncol(posterior)
+
+# Modal assignments
+modal <- best_model$predclass
+
+# Construct the D matrix: K x K, where D[c, c'] = P(assigned c | true c')
+D <- matrix(0, K, K)
+for (c in 1:K) {
+  members <- which(modal == c)
+  D[c, ] <- colSums(posterior[members, , drop = FALSE]) / colSums(posterior)
+}
+
+# Step 2: Invert D to get the correction matrix
+D_inv <- solve(D)
+
+# Step 3: Compute naive class-specific means
+naive_means <- tapply(sim_data$pol_participation, modal, mean)
+
+# Step 4: Apply correction
+# corrected_means = D_inv %*% naive_means
+# (Simplified; full implementation also corrects variances and standard errors)
+```
+
+For most social science applications where entropy exceeds .80, the naive classify-analyze approach produces results sufficiently close to the BCH-corrected estimates. Report entropy alongside your distal outcome analyses so readers can assess the degree of potential attenuation.
+
+## Categorical Distal Outcomes
+
+When the distal outcome is categorical rather than continuous (e.g., voted vs. did not vote, party choice), replace ANOVA with logistic regression or multinomial logistic regression:
+
+```{r distal-categorical}
+# Example: binary distal outcome (voted or not)
+sim_data$voted <- rbinom(nrow(sim_data), 1, 
+                          prob = c(0.75, 0.60, 0.65, 0.50)[as.numeric(sim_data$lca_class)])
+
+# Logistic regression: voting predicted by class
+vote_model <- glm(voted ~ lca_class, data = sim_data, family = binomial)
+
+# Odds ratios
+vote_or <- exp(cbind(OR = coef(vote_model), confint(vote_model)))
+cat("=== DISTAL OUTCOME: VOTING (Logistic Regression) ===\n\n")
+kable(round(vote_or, 3),
+      caption = "Odds Ratios: Class Membership Predicting Voting") %>%
+  kable_styling(full_width = FALSE)
+
+# Class-specific voting rates
+vote_rates <- sim_data %>%
+  group_by(lca_class) %>%
+  summarise(pct_voted = mean(voted) * 100, n = n(), .groups = "drop")
+
+kable(vote_rates, digits = 1,
+      caption = "Voting Rate by Latent Class") %>%
+  kable_styling(full_width = FALSE)
+```
+
+---
+
+# Multilevel LCA
+
+## When Data Are Nested
+
+Many social science datasets have a hierarchical structure: individuals are nested within groups — students within schools, citizens within countries, employees within organizations, respondents within survey clusters. Standard LCA assumes that all individuals are drawn independently from a single population. When data are nested, this assumption is violated: individuals within the same group may be more similar to each other than to individuals in other groups, and the latent class structure itself may vary across groups.
+
+Multilevel LCA (also called multilevel mixture modeling) extends standard LCA to accommodate nested data. It can estimate:
+
+- **Within-level classes:** Latent classes at the individual level, as in standard LCA.
+- **Between-level classes:** Latent classes at the group level (e.g., types of schools or types of countries).
+- **Cross-level effects:** How group-level characteristics influence individual-level class membership or class prevalence.
+
+## Applications in Social Science
+
+- **Comparative political science:** Identifying political attitude typologies across countries, while allowing the class prevalences (and potentially the class definitions) to vary by country-level characteristics (e.g., democratic quality, inequality levels).
+- **Education sociology:** Identifying student engagement profiles nested within schools, testing whether school characteristics (e.g., funding level, urbanicity) predict class prevalence.
+- **Organizational research:** Identifying employee types within firms, testing whether organizational culture predicts the distribution of types.
+
+## Software Requirements
+
+Multilevel LCA is not supported by `poLCA`. Mplus is the standard tool (`TYPE = TWOLEVEL MIXTURE`). Latent GOLD also supports multilevel LCA. If your data are nested and the nesting structure is an important part of your research design, you will need one of these tools.
+
+If multilevel modeling is not feasible, a pragmatic alternative is to include group-level variables as covariates in a standard LCA (Module 10). This does not properly model the nesting (standard errors will be incorrect and the class structure cannot vary across groups), but it provides a rough approximation of cross-level effects.
+
+---
+
+# Sensitivity and Robustness Analysis
+
+## Why Robustness Matters
+
+A latent class solution is sensitive to the decisions you made during the design phase: which indicators you included, how you recoded them, what sample you used, and which model selection criteria you prioritized. A robust solution is one that remains stable when these decisions are perturbed. An unstable solution — one that changes substantially when you add or drop an indicator, use a different recoding scheme, or analyze a different subsample — is suspect.
+
+Reviewers increasingly expect some form of sensitivity analysis. The following checks are standard practice:
+
+## Indicator Sensitivity
+
+Re-estimate the LCA after dropping one indicator at a time. If removing a single indicator causes the class structure to collapse or fundamentally change, the solution is overly dependent on that indicator and may not reflect a stable population typology.
+
+```{r indicator-sensitivity, eval=FALSE}
+# Drop each indicator in turn and re-estimate
+for (drop_item in item_names) {
+  remaining <- setdiff(item_names, drop_item)
+  f_reduced <- as.formula(paste0("cbind(", paste(remaining, collapse=", "), ") ~ 1"))
+  
+  fit_reduced <- poLCA(f_reduced, data = sim_data, nclass = length(best_model$P),
+                        nrep = 50, maxiter = 5000, verbose = FALSE)
+  
+  cat(sprintf("Dropped %s: BIC = %.1f, prevalences = %s\n",
+              drop_item, fit_reduced$bic, 
+              paste(round(fit_reduced$P, 3), collapse = ", ")))
+}
+```
+
+## Recoding Sensitivity
+
+If you dichotomized Likert scales, test whether a different cutpoint produces similar classes. For example, if you coded "agree + strongly agree" vs. all else, also try "strongly agree" vs. all else, or a three-category coding (disagree / neutral / agree).
+
+## Subsample Stability
+
+The split-sample cross-validation in Module 9 addresses this. Additionally, you can test stability across subgroups: does the same class structure emerge among men and women separately? Among younger and older respondents? If the structure collapses in a specific subgroup, it may be driven by characteristics of the complementary subgroup.
+
+## Reporting Sensitivity Results
+
+In your manuscript, briefly summarize the sensitivity analyses in a supplementary materials section:
+
+- "The [K]-class solution was robust to the removal of individual indicators; dropping any single item did not change the number of classes or substantially alter the class profiles."
+- "Alternative recoding schemes (trichotomous coding) produced a similar class structure, though the [specific class] was less well-separated under the three-category specification."
+- "Split-sample cross-validation confirmed that the class profiles replicated across random halves of the sample (see Module 9)."
+
+---
+
+# Summary
+
+After this module, you should be able to:
+
+1. Explain why the one-step approach is flawed and should be avoided.
+2. Implement the three-step approach using `poLCA` (Step 1–2) and `nnet::multinom` (Step 3).
+3. Prepare covariates correctly (standardize continuous, dummy-code categorical).
+4. Interpret multinomial logistic regression output: log-odds, odds ratios, confidence intervals, and intercepts.
+5. Choose and justify a reference class.
+6. Understand the measurement invariance assumption and when it is violated.
+7. Handle missing covariate data via multiple imputation.
+8. Use binomial logistic regression when appropriate.
+9. Avoid causal language when describing statistical associations.
+10. Recognize and address covariate-specific sparseness with flattening priors.
+11. Model distal outcomes — both continuous (ANOVA, OLS regression) and categorical (logistic regression) — using class membership as a predictor.
+12. Understand the BCH correction for distal outcomes and when it is necessary.
+13. Recognize when multilevel LCA is needed for nested data and which software supports it.
+14. Conduct sensitivity analyses to establish the robustness of the class solution.
+
+Proceed to **Module 11: Reporting Standards** for guidance on writing up your LCA study for publication.
+
+---
+
+# References
+
+Asparouhov, T., & Muthén, B. O. (2014). Auxiliary variables in mixture modeling: Three-step approaches using Mplus. *Structural Equation Modeling, 21*(3), 329–341.
+
+Bolck, A., Croon, M., & Hagenaars, J. (2004). Estimating latent structure models with categorical variables: One-step versus three-step estimators. *Political Analysis, 12*(1), 3–27.
+
+Collins, L. M., & Lanza, S. T. (2010). *Latent class and latent transition analysis.* Wiley.
+
+Henry, K. L., & Muthén, B. (2010). Multilevel latent class analysis: An application of adolescent smoking typologies with individual and contextual predictors. *Structural Equation Modeling, 17*(2), 193–215.
+
+Vermunt, J. K. (2010). Latent class modeling with covariates: Two improved three-step approaches. *Political Analysis, 18*(4), 450–469.
+
+Weller, B. E., Bowen, N. K., & Faubert, S. J. (2020). Latent class analysis: A guide to best practice. *Journal of Black Psychology, 46*(4), 287–311.
+
+---
+
+```{r nav-footer, echo=FALSE, results='asis'}
+cat('<div style="margin-top:3em; padding-top:1em; border-top:1px solid #ddd; font-size:0.9em; color:#555;">
+<a href="index.html">&#8617; Course Index</a>
+</div>')
+```

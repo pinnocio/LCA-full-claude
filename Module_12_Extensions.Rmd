@@ -1,0 +1,453 @@
+---
+title: "Module 12: Advanced Extensions and Related Methods"
+subtitle: "LCA for Social Science Research"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    number_sections: true
+    theme: readable
+    highlight: tango
+    code_folding: show
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+```{r packages}
+library(poLCA)
+library(tidyverse)
+library(knitr)
+library(kableExtra)
+```
+
+# Purpose of This Module
+
+This module extends the cross-sectional LCA framework covered in Modules 1–11 to address three additional research design situations: longitudinal data (where you observe the same individuals at multiple time points), group comparisons (where you want to test whether the latent class structure is equivalent across known populations), and alternative methods for studying belief system structure. These extensions are conceptual introductions — they require software beyond `poLCA` for full implementation — but they are essential knowledge for designing a comprehensive social science study.
+
+---
+
+# Latent Transition Analysis (LTA)
+
+## When to Use LTA
+
+LTA is the appropriate extension of LCA when your survey data were collected at two or more time points and your research question concerns change over time — specifically, whether individuals transition between latent statuses from one time point to another.
+
+LTA does not simply run separate LCAs at each time point and compare the class distributions. It estimates a single model that simultaneously identifies the latent classes at each time point (called "latent statuses" to distinguish from cross-sectional classes) and estimates the probabilities of transitioning between statuses across adjacent time points.
+
+## What LTA Estimates
+
+LTA produces three types of parameter estimates:
+
+1. **Latent status prevalences** at each time point: The proportion of the population in each latent status at time 1, time 2, etc.
+
+2. **Item-response probabilities** for each latent status at each time point: These define what each status "looks like" in terms of the indicator response patterns. Under measurement invariance (see below), these are constrained to be identical across time points — the same status has the same meaning at every measurement occasion.
+
+3. **Transition probabilities**: These are the probabilities of moving from one latent status at time $t$ to each latent status at time $t+1$. They are arranged in a transition probability matrix, where rows represent the status at time $t$, columns represent the status at time $t+1$, and each cell contains $P(\text{Status at } t+1 = c' \mid \text{Status at } t = c)$. Each row sums to 1.
+
+## Transition Probabilities and Their Interpretation
+
+The transition probability matrix is the central output of LTA. Diagonal values represent the probability of remaining in the same status (stability); off-diagonal values represent the probability of transitioning to a different status (change).
+
+For example, in a study of political belief systems measured before and after a major election:
+
+| | Status 1 (t+1) | Status 2 (t+1) | Status 3 (t+1) |
+|---|---|---|---|
+| **Status 1 (t)** | 0.85 | 0.10 | 0.05 |
+| **Status 2 (t)** | 0.08 | 0.80 | 0.12 |
+| **Status 3 (t)** | 0.03 | 0.15 | 0.82 |
+
+This matrix shows high stability on the diagonal (most individuals remain in their status) with specific transition tendencies on the off-diagonal (e.g., 12% of Status 2 members transition to Status 3).
+
+LTA inherently controls for measurement error in assessing transitions. Unlike a naive approach where you would classify individuals at each time point and count changes (which conflates true transitions with classification errors), LTA models the transitions probabilistically, accounting for the uncertainty in latent status membership at both time points.
+
+## Measurement Invariance Across Time
+
+A critical methodological decision in LTA is whether to impose measurement invariance across time points. Measurement invariance means that the item-response probabilities defining each latent status are constrained to be identical at every time point. This ensures that "Status 1" at time 1 means the same thing as "Status 1" at time 2.
+
+If measurement invariance holds, you can meaningfully interpret the transition probabilities — a transition from Status 1 to Status 2 represents genuine change in the individual, not a change in what the statuses mean. If it does not hold (e.g., the meaning of survey items shifts over time due to changing social context), the transition probabilities may reflect measurement artifact rather than true change.
+
+Measurement invariance should be tested formally by comparing the fit of a model with invariance constraints to a model without them.
+
+## Software Requirements
+
+LTA requires specialized software. `poLCA` does not support LTA. Mplus is the most widely used tool for LTA in social science (using the `CLASSES` and `TYPE = MIXTURE` specifications). Latent GOLD also supports LTA.
+
+```{r lta-transition-demo}
+# Manually constructed 2-class, 2-wave transition scenario.
+# poLCA does not support full LTA estimation, so we demonstrate the
+# structure of a transition probability matrix and what to read from it.
+
+# Hypothetical transition probability matrix: rows = status at t1, cols = status at t2
+trans_mat <- matrix(
+  c(0.82, 0.18,
+    0.25, 0.75),
+  nrow = 2, byrow = TRUE,
+  dimnames = list(
+    c("Progressive (t1)", "Conservative (t1)"),
+    c("Progressive (t2)", "Conservative (t2)")
+  )
+)
+
+kable(trans_mat,
+      caption = "Hypothetical LTA Transition Probability Matrix (2 statuses, 2 waves)",
+      digits = 2) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE) %>%
+  add_header_above(c(" " = 1, "Status at Wave 2" = 2))
+```
+
+Reading this matrix: the diagonal cells (0.82, 0.75) give the stability probabilities — 82% of those in the Progressive status at Wave 1 remain Progressive at Wave 2, and 75% of Conservatives remain Conservative. Off-diagonal cells give transition probabilities: 18% of Progressives shift to Conservative, while 25% of Conservatives shift to Progressive.
+
+---
+
+# Repeated-Measures LCA (RMLCA)
+
+## When to Use RMLCA
+
+RMLCA is an alternative to LTA for longitudinal data, appropriate when your research question concerns the overall pattern or trajectory of change across three or more time points, rather than point-to-point transitions.
+
+While LTA focuses on transition probabilities between adjacent time points (time 1 → time 2, time 2 → time 3), RMLCA treats the entire longitudinal sequence as the unit of analysis. It stacks all time-point indicators into a single model and identifies latent classes based on individuals' complete trajectories. The resulting classes represent distinct longitudinal types — for example, a "stable progressive" class, an "increasingly conservative" class, and a "fluctuating" class.
+
+## How RMLCA Differs from LTA
+
+| Feature | LTA | RMLCA |
+|---------|-----|-------|
+| Research question | Point-to-point transitions | Overall trajectory types |
+| Unit of analysis | Adjacent time pairs | Full longitudinal sequence |
+| Key output | Transition probability matrix | Trajectory class profiles |
+| Assumes | Status stability between time points | No functional form for change |
+| Number of time points | 2 or more | 3 or more recommended |
+| Best when | Change is gradual, between well-defined states | Change is non-linear, discrete, or does not follow a smooth function |
+
+## When RMLCA Is Preferred Over Growth Curve Models
+
+Growth curve models (e.g., latent growth curve analysis, growth mixture modeling) assume that change over time follows a smooth, continuous functional form — typically linear, quadratic, or exponential. They model the trajectory as a function with growth parameters (intercept, slope, curvature).
+
+RMLCA makes no such assumption. It simply identifies groups of people whose patterns of categorical responses across time points are similar. This makes RMLCA particularly appropriate when:
+
+- Change is discrete rather than continuous (e.g., someone moves from "non-voter" to "voter" between elections).
+- Change is non-monotonic (e.g., a group that shifts left, then right, then left again).
+- The response variables are categorical (growth curve models require continuous outcomes).
+
+## Software Requirements
+
+RMLCA can be estimated in `poLCA` by treating all time-point indicators as a single set of indicators. For a study with 6 items measured at 3 time points, you would include all 18 items (6 items × 3 waves) in the `cbind()` call. However, this approach treats all item-time combinations as exchangeable indicators and does not impose any temporal structure. For proper longitudinal structure (including measurement invariance testing across time points), Mplus is preferred.
+
+```{r rmlca-demo}
+set.seed(42)
+N <- 600
+
+# Three latent classes with different stability profiles across two waves.
+# Class 1: stable progressives (high endorsement both waves)
+# Class 2: stable conservatives (low endorsement both waves)
+# Class 3: shifters (high Wave 1, low Wave 2)
+
+class_assign <- sample(1:3, N, replace = TRUE, prob = c(0.40, 0.35, 0.25))
+
+items <- c("REDIST", "IMMIG", "PRIDE", "TRUST", "TRAD", "ENVIR")
+
+# P(endorse) per class per wave — used to generate binary items coded 1/2
+p_endorse <- matrix(
+  c(0.80, 0.78,   # Class 1: stable progressive
+    0.20, 0.22,   # Class 2: stable conservative
+    0.65, 0.30),  # Class 3: shifters
+  nrow = 3, byrow = TRUE,
+  dimnames = list(NULL, c("W1", "W2"))
+)
+
+col_names <- c(paste0("W1_", items), paste0("W2_", items))
+sim_data  <- as.data.frame(matrix(NA_integer_, nrow = N, ncol = 12))
+names(sim_data) <- col_names
+
+for (i in seq_len(N)) {
+  cl <- class_assign[i]
+  for (item in items) {
+    p1 <- p_endorse[cl, "W1"]
+    p2 <- p_endorse[cl, "W2"]
+    sim_data[i, paste0("W1_", item)] <- sample(1:2, 1L, prob = c(1 - p1, p1))
+    sim_data[i, paste0("W2_", item)] <- sample(1:2, 1L, prob = c(1 - p2, p2))
+  }
+}
+
+# Build poLCA formula from all 12 column names
+rmlca_formula <- as.formula(
+  paste("cbind(", paste(col_names, collapse = ", "), ") ~ 1")
+)
+
+set.seed(42)
+rmlca_fit <- poLCA(rmlca_formula, data = sim_data,
+                   nclass = 3, nrep = 20, verbose = FALSE)
+
+cat("RMLCA: 3-class solution on 12 items (2 waves x 6 items)\n\n")
+cat("Class prevalences:\n")
+print(round(rmlca_fit$P, 3))
+cat("\nLog-likelihood:", round(rmlca_fit$llik, 2), "\n")
+cat("BIC:", round(rmlca_fit$bic, 2), "\n")
+```
+
+```{r rmlca-profiles}
+# Extract item-response probabilities (P(category = 2) = P(endorse))
+# poLCA stores probs as a named list: one matrix per item, dim = nclass x ncategories
+
+probs_list <- rmlca_fit$probs
+# Derive number of classes from the first item's probability matrix (nrow = nclass)
+n_classes  <- nrow(probs_list[[1L]])
+
+prob_df <- purrr::map_dfr(names(probs_list), function(item_name) {
+  mat <- probs_list[[item_name]]   # nclass x 2
+  tibble(
+    item  = item_name,
+    class = paste0("Class ", seq_len(n_classes)),
+    prob  = as.numeric(mat[, 2])
+  )
+})
+
+prob_df <- prob_df %>%
+  mutate(
+    wave       = if_else(startsWith(item, "W1_"), "Wave 1", "Wave 2"),
+    item_short = sub("^W[12]_", "", item)
+  )
+
+ggplot(prob_df, aes(x = item_short, y = prob, fill = class)) +
+  geom_col(position = position_dodge(0.8), width = 0.7) +
+  facet_wrap(~ wave, ncol = 1) +
+  scale_fill_brewer(palette = "Set2", name = "Latent Class") +
+  scale_y_continuous(limits = c(0, 1), labels = scales::percent_format()) +
+  labs(
+    title    = "RMLCA Item-Response Probability Profiles by Wave",
+    subtitle = "P(endorse) for each item across three latent classes",
+    x        = "Item",
+    y        = "P(Endorse)"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "bottom",
+        strip.text = element_text(face = "bold"))
+```
+
+### BLRT in R
+
+The Bootstrap Likelihood Ratio Test (BLRT) is the recommended procedure for selecting the number of latent classes. It tests whether adding one more class (k) improves fit significantly over the k−1 class model, using a parametric bootstrap to approximate the null distribution of the likelihood ratio statistic.
+
+```{r blrt-demo}
+blrt <- function(data, formula, k, B = 50) {
+  # Fit null (k-1) and alternative (k) models on the real data
+  set.seed(1)
+  fit_null <- poLCA(formula, data = data,
+                    nclass = k - 1L, nrep = 10, verbose = FALSE)
+  set.seed(2)
+  fit_alt  <- poLCA(formula, data = data,
+                    nclass = k,      nrep = 10, verbose = FALSE)
+
+  obs_lr <- -2 * (fit_null$llik - fit_alt$llik)
+
+  # Parametric bootstrap: simulate from the null model, refit both models
+  item_names   <- names(fit_null$probs)
+  boot_formula <- as.formula(
+    paste("cbind(", paste(item_names, collapse = ", "), ") ~ 1")
+  )
+
+  boot_lr <- numeric(B)
+  for (b in seq_len(B)) {
+    sim_raw <- poLCA.simdata(
+      N     = nrow(data),
+      probs = fit_null$probs,
+      P     = fit_null$P
+    )$dat
+    # poLCA.simdata returns columns Y1, Y2, ... — rename to match the formula
+    names(sim_raw) <- item_names
+
+    set.seed(b * 100L)
+    b_null <- tryCatch(
+      poLCA(boot_formula, data = sim_raw,
+            nclass = k - 1L, nrep = 10, verbose = FALSE),
+      error = function(e) NULL
+    )
+    set.seed(b * 100L + 1L)
+    b_alt  <- tryCatch(
+      poLCA(boot_formula, data = sim_raw,
+            nclass = k,      nrep = 10, verbose = FALSE),
+      error = function(e) NULL
+    )
+
+    if (!is.null(b_null) && !is.null(b_alt)) {
+      boot_lr[b] <- -2 * (b_null$llik - b_alt$llik)
+    } else {
+      boot_lr[b] <- NA_real_
+    }
+  }
+
+  boot_ok <- boot_lr[!is.na(boot_lr)]
+  list(
+    k         = k,
+    obs_lr    = obs_lr,
+    p_value   = mean(boot_ok >= obs_lr),
+    boot_dist = boot_ok,
+    n_boot_ok = length(boot_ok)
+  )
+}
+
+# Test whether 4 classes improve over 3 on the RMLCA simulated data
+cat("Running BLRT (k=4 vs k=3) with B=50 bootstrap replications...\n")
+blrt_result <- blrt(data = sim_data, formula = rmlca_formula, k = 4L, B = 50L)
+
+cat(sprintf(
+  "\nBLRT Results: %d vs %d classes\n  Observed LR statistic : %.2f\n  Bootstrap p-value     : %.3f  (based on %d valid replications)\n",
+  blrt_result$k - 1L, blrt_result$k,
+  blrt_result$obs_lr,
+  blrt_result$p_value,
+  blrt_result$n_boot_ok
+))
+
+if (blrt_result$p_value < 0.05) {
+  cat("  Conclusion: k=4 fits significantly better than k=3 (p < .05)\n")
+} else {
+  cat("  Conclusion: No significant improvement from k=3 to k=4 (p >= .05)\n")
+}
+```
+
+---
+
+# Multiple-Group LCA
+
+## When to Use It
+
+Multiple-group LCA is the appropriate method when you want to test whether the latent class structure is identical across two or more known populations — for example, whether the same political attitude typology exists for men and women, for respondents from different countries, or for different age cohorts.
+
+This is fundamentally different from including a variable as a covariate (Module 10). A covariate predicts class membership while assuming the classes themselves are identical across covariate levels. Multiple-group LCA allows the classes themselves — their item-response probabilities and their prevalences — to differ across groups. It then provides formal tests of whether those differences are statistically significant.
+
+## Measurement Invariance Testing
+
+The central procedure in multiple-group LCA is a nested model comparison that tests progressively restrictive forms of measurement invariance:
+
+**Step 1: Configural invariance.** Estimate the LCA separately in each group without any cross-group constraints. Determine whether the same number of classes emerges in each group and whether the class profiles appear qualitatively similar. This is the baseline model.
+
+**Step 2: Structural invariance of item-response probabilities.** Constrain the item-response probabilities to be equal across groups. This means the classes are defined identically in each group — "Class 1" has the same profile for men as for women. If this constrained model fits the data no worse than the configural model (assessed by comparing BIC or using a likelihood ratio test), measurement invariance holds.
+
+**Step 3: Structural invariance of class prevalences.** Further constrain the class prevalences to be equal across groups. If this model fits, not only do the classes mean the same thing in each group, but they are equally common.
+
+If Step 2 fails — the item-response probabilities differ significantly across groups — the classes do not mean the same thing for different groups. In this case, you cannot directly compare class prevalences or predict class membership using that grouping variable as a covariate. The grouping variable must be treated as a structural modifier of the measurement model, not as a predictor of class membership within a fixed structure.
+
+## Implications for Your Research Design
+
+When deciding whether a sociodemographic variable (e.g., gender) should be a covariate or a grouping variable, consider:
+
+- If you believe the variable affects who belongs to which class, but the classes themselves are the same for everyone → use it as a **covariate** (Module 10).
+- If you believe the variable fundamentally changes how respondents interpret the survey items, so that the classes may have different meanings for different groups → use it as a **grouping variable** in multiple-group LCA.
+
+In practice, it is often informative to test measurement invariance first (multiple-group LCA) and, if it holds, then proceed to model the variable as a covariate.
+
+## Software Requirements
+
+Multiple-group LCA is not supported by `poLCA`. Mplus is the standard tool (using the `KNOWNCLASS` option within `TYPE = MIXTURE`). Latent GOLD also supports multiple-group analysis.
+
+---
+
+# Related Methods: CCA and EGA
+
+## Correlational Class Analysis (CCA)
+
+While LCA identifies groups of individuals who share similar *raw attitudes* (i.e., who give similar responses to the items), Correlational Class Analysis (CCA) identifies groups who share similar *patterns of association among attitudes*, regardless of their specific positions.
+
+This distinction is critical for studying belief systems. Two individuals might disagree on every policy question (one is consistently progressive, the other consistently conservative) but still share the same belief structure — they both organize their attitudes along a single coherent ideological dimension. CCA would place them in the same "construal" group because their attitudes are structured the same way, even though their content differs.
+
+CCA has been applied to study how voters for populist radical right parties organize cultural attitudes — revealing that some voters view issues like immigration and gay rights as a single monolithic dimension, while others partition these issues into entirely disconnected belief systems.
+
+CCA and LCA address different research questions. If your question is "what types of attitudes exist?" → use LCA. If your question is "how do people structure their attitudes, regardless of which positions they hold?" → use CCA.
+
+The `corclass` package in R implements CCA.
+
+```{r cca-demo, eval=FALSE}
+# install.packages("corclass")
+library(corclass)
+
+# CCA groups individuals by shared correlation structure among attitude items.
+# `attitude_data` is a data frame where rows = respondents, cols = attitude items
+# (numeric, e.g., Likert or binary).
+
+cca_result <- corclass(
+  x       = attitude_data,   # numeric data frame of attitude variables
+  cut     = 0.05,            # minimum absolute correlation to retain in the graph
+  verbose = TRUE
+)
+
+# Inspect the identified construal groups
+summary(cca_result)
+
+# Plot the internal correlation structure per group
+plot(cca_result)
+
+# Extract group membership vector (one integer per respondent)
+group_membership <- cca_result$membership
+table(group_membership)
+```
+
+## Exploratory Graph Analysis (EGA)
+
+EGA is a psychometric network approach that can be used to model and visualize the internal structure of belief systems after they have been identified by CCA or LCA. EGA estimates regularized partial correlation networks among attitude items within each group and applies community detection algorithms (such as the Walktrap algorithm) to identify clusters of tightly connected beliefs.
+
+The result is a network graph where each node is a survey item, edges represent partial correlations, and communities represent coherent belief dimensions. This allows you to see which political attitudes act as central hubs in a belief system, how different dimensions are integrated or compartmentalized, and whether the internal structure of beliefs differs across latent classes.
+
+EGA is implemented in the `EGAnet` package in R.
+
+```{r ega-demo, eval=FALSE}
+# install.packages("EGAnet")
+library(EGAnet)
+
+# EGA estimates a regularized partial correlation network and applies
+# community detection (Walktrap by default) to identify belief dimensions.
+# `attitude_data` is a numeric data frame of attitude items.
+
+ega_result <- EGA(
+  data      = attitude_data,
+  model     = "glasso",      # graphical LASSO for regularized partial correlations
+  algorithm = "walktrap",    # community detection algorithm
+  plot.EGA  = TRUE           # produce the network plot
+)
+
+# Summary: number of communities and item assignments
+summary(ega_result)
+
+# Community membership vector (one integer per item)
+ega_result$wc
+
+# To compare network structure across latent classes, subset and re-run:
+class_subset <- attitude_data[class_membership == 1, ]
+ega_class1   <- EGA(data = class_subset, model = "glasso", plot.EGA = TRUE)
+```
+
+---
+
+# Summary
+
+| Extension | Research Question | Key Output | Software |
+|-----------|------------------|------------|----------|
+| **LTA** | Do individuals transition between latent statuses over time? | Transition probability matrix | Mplus, Latent GOLD |
+| **RMLCA** | Are there distinct longitudinal trajectory types? | Trajectory class profiles | Mplus, poLCA (partial) |
+| **Multiple-Group LCA** | Is the class structure equivalent across known groups? | Measurement invariance tests | Mplus, Latent GOLD |
+| **CCA** | Do people structure their attitudes the same way? | Construal groups | R (`corclass`) |
+| **EGA** | What is the internal network structure of beliefs? | Network graphs with communities | R (`EGAnet`) |
+
+---
+
+# References
+
+Bolck, A., Croon, M., & Hagenaars, J. (2004). Estimating latent structure models with categorical variables. *Political Analysis, 12*(1), 3–27.
+
+Bertero, A., et al. (2024). Inequality belief systems: What they look like, how to study them, and why they matter. *Working paper.*
+
+Collins, L. M., & Lanza, S. T. (2010). *Latent class and latent transition analysis.* Wiley.
+
+Daenekindt, S., de Koster, W., & van der Waal, J. (2017). How people organise cultural attitudes: Cultural belief systems and the populist radical right. *West European Politics, 40*(4), 791–811.
+
+Weller, B. E., Bowen, N. K., & Faubert, S. J. (2020). Latent class analysis: A guide to best practice. *Journal of Black Psychology, 46*(4), 287–311.
+
+---
+
+```{r nav-footer, echo=FALSE, results='asis'}
+cat('<div style="margin-top:3em; padding-top:1em; border-top:1px solid #ddd; font-size:0.9em; color:#555;">
+<a href="index.html">&#8617; Course Index</a>
+</div>')
+```

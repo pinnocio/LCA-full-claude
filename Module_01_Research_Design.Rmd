@@ -1,0 +1,272 @@
+---
+title: "Module 1: Research Design Foundations for Latent Class Analysis"
+subtitle: "LCA for Social Science Research"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    number_sections: true
+    theme: readable
+    highlight: tango
+    code_folding: show
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+# Purpose of This Module
+
+This module addresses the foundational design decisions that must be resolved before any data collection or statistical estimation begins. It covers three questions: (1) When is LCA the appropriate analytic method? (2) How do you formulate a research question compatible with LCA? (3) What role does theory play in an LCA study, and how should you construct the theoretical framework that guides indicator selection, interpretation, and validation?
+
+These decisions are not optional preliminaries. Every downstream step in the analysis — which variables you select, how many classes you expect, how you interpret the profiles, how you validate the results — depends on the clarity and rigor of this initial design work.
+
+---
+
+# Person-Oriented vs. Variable-Oriented Research
+
+## The Variable-Oriented Paradigm
+
+Most social science research operates within a variable-oriented paradigm. The focus is on relationships among variables: Does education predict income? Is political interest associated with voter turnout? Does exposure to media affect attitudes toward immigration? The unit of analysis is the variable, and the goal is to estimate population-level associations — regression coefficients, correlations, factor loadings — that apply uniformly across all individuals in the sample.
+
+The variable-oriented paradigm assumes that the relationships among variables are homogeneous. When you estimate a regression of income on education, you assume that the slope is (roughly) the same for everyone. When you run a factor analysis, you assume that the same latent dimensions underlie the responses of every individual in the sample.
+
+This assumption is often reasonable. But it can also be profoundly misleading. If the population is composed of qualitatively distinct subgroups — subgroups for whom the relationships among variables differ not just in magnitude but in kind — then averaging across those subgroups produces parameter estimates that accurately describe no one.
+
+## The Person-Oriented Paradigm
+
+The person-oriented paradigm shifts the unit of analysis from the variable to the individual. Rather than asking "what is the relationship between X and Y?", it asks "are there distinct types of people who show different configurations of X and Y?" The focus is on identifying subpopulations that are internally homogeneous but qualitatively different from each other.
+
+This paradigm does not reject variable-level relationships. It adds a prior question: before you estimate the relationship between X and Y, should you first check whether the population contains fundamentally different types of people for whom that relationship might differ?
+
+Latent Class Analysis is one of the primary statistical tools of person-oriented research. It formalizes the intuition that the population is a mixture of unobserved types, and it provides a probabilistic framework for identifying those types from observed data.
+
+## Why the Distinction Matters for Your Research Design
+
+The choice between a variable-oriented and person-oriented approach is not a matter of statistical preference. It is a substantive theoretical commitment. You should use LCA when your theory predicts that the population is composed of qualitatively distinct subgroups — not merely individuals who differ in degree along a continuous dimension, but individuals who differ in kind.
+
+Consider two ways of thinking about political attitudes:
+
+- **Dimensional view:** People range from left to right on a single ideological continuum. Some are more left-wing, some are more right-wing, and most are somewhere in the middle. This view motivates factor analysis or principal component analysis.
+- **Typological view:** People hold distinct configurations of attitudes. A person might be economically progressive but culturally conservative, or economically conservative but supportive of immigration. These configurations cannot be captured by a single dimension. They represent qualitatively different types. This view motivates LCA.
+
+If your theory is dimensional, LCA is the wrong tool. If your theory is typological, LCA is appropriate. If you are unsure, LCA can be used exploratorily — but the results will be harder to interpret and validate without a theoretical anchor.
+
+---
+
+# When LCA Is the Right Method
+
+## Situations That Call for LCA
+
+LCA is appropriate when your research question involves one or more of the following:
+
+**Identifying unobserved subgroups.** You suspect that the population contains subgroups that are not directly observable — they cannot be defined by a single measured variable (like gender or income bracket) — but can be inferred from patterns of responses across multiple observed variables. In sociology, these might be types of civic engagement, configurations of cultural taste, or belief system profiles. In political science, they might be voter typologies, policy attitude clusters, or patterns of democratic participation.
+
+**Reducing complex multivariate data to a manageable typology.** When you have many categorical variables and want to summarize the overall pattern — rather than analyzing each variable separately or assuming a single underlying dimension — LCA provides a principled, model-based way to create a typology. Unlike cluster analysis, which is atheoretical and algorithmic, LCA is grounded in a probability model that produces fit statistics, classification uncertainty estimates, and testable assumptions.
+
+**Testing whether heterogeneity in your data reflects discrete types rather than continuous variation.** LCA provides a formal framework for asking: does a typological model fit the data better than a dimensional model? By comparing the fit of LCA models with varying numbers of classes against a single-class (homogeneous population) baseline, you can assess whether discrete subgroups provide a better account of the observed response patterns.
+
+**Generating a categorical grouping variable for downstream analysis.** Once you have identified latent classes, class membership can serve as a predictor or outcome in subsequent analyses — for example, predicting class membership from sociodemographic characteristics, or predicting behavioral outcomes from class membership.
+
+## Situations Where LCA Is Not Appropriate
+
+**Your indicators are continuous.** LCA requires categorical (nominal or ordinal) indicators. If your survey items are measured on continuous scales (e.g., thermometer ratings from 0 to 100, slider scales, continuous indices), you need Latent Profile Analysis (LPA) — the continuous-indicator analogue of LCA. Some researchers dichotomize continuous variables to use LCA, but this discards information and should only be done if theoretically justified (see Module 2).
+
+**Your research question is about variable relationships, not types.** If you want to know whether X predicts Y, or what the factor structure of a set of items is, LCA is not the right tool. Use regression, structural equation modeling, or factor analysis.
+
+**You have too few indicators.** With only two or three binary indicators, the model may not be identifiable — there are more parameters to estimate than unique data points. A practical minimum is four binary indicators for a two-class model, and more for models with more classes.
+
+**You have no theoretical basis for expecting subgroups.** LCA will always find classes if you ask it to — the algorithm will partition any data into groups. Without a theoretical reason to expect subgroups, you have no basis for interpreting the classes or defending the number of classes you select. The results become descriptive at best and misleading at worst.
+
+## LCA in Published Sociology and Political Science
+
+To see what a completed LCA study looks like in practice, consider these published examples from social science journals:
+
+**Bonikowski and DiMaggio (2016)** used LCA to identify four distinct varieties of American nationalism — ardent nationalists, disengaged, creedal nationalists, and restrictive nationalists — based on survey items measuring national identification, national hubris, and criteria for national membership. Their indicators spanned cultural, civic, and ethnic dimensions of nationalism. The study demonstrated that national identity is not a single dimension but a multidimensional configuration with qualitatively distinct types. Published in *American Sociological Review*.
+
+**Daenekindt, de Koster, and van der Waal (2017)** applied Correlational Class Analysis (followed by EGA network modeling) to identify how voters for the populist radical right organize their cultural attitudes. They found that some voters treat immigration and moral issues as a single monolithic dimension, while others partition these issues into disconnected belief systems. Published in *West European Politics*.
+
+**Weller, Bowen, and Faubert (2020)** reviewed LCA applications across the social and health sciences, documenting studies that identified typologies of adolescent risk behavior, profiles of social determinants of health, and patterns of child welfare involvement. Their methodological review is the most widely cited best-practice guide for LCA in applied social science. Published in *Journal of Black Psychology*.
+
+**Bertero et al. (2024)** used LCA alongside CCA and EGA to study inequality belief systems — how people structure their attitudes about economic inequality, meritocracy, and redistribution. They found that the same set of inequality attitudes can be organized in fundamentally different ways across subgroups of the population. Working paper in circulation.
+
+These studies illustrate the range of substantive questions that LCA can address and provide models for how to structure your own analysis.
+
+## LCA vs. Common Alternatives
+
+| Method | Latent Variable Type | Indicator Type | Produces | Key Limitation |
+|--------|---------------------|----------------|----------|----------------|
+| **LCA** | Categorical (classes) | Categorical | Probabilistic class assignments, fit statistics, item-response probabilities | Requires categorical indicators |
+| **LPA** | Categorical (classes) | Continuous | Same as LCA but for continuous data | Assumes within-class normality |
+| **Factor Analysis** | Continuous (dimensions) | Continuous or ordinal | Factor loadings, factor scores | Assumes single population structure |
+| **K-Means Clustering** | Categorical (clusters) | Continuous | Deterministic cluster assignments | No probability model, no fit statistics, no classification uncertainty |
+| **Hierarchical Clustering** | Categorical (clusters) | Any | Dendrogram, cluster assignments | Same as K-means; also sensitive to distance metric and linkage choice |
+| **Mixture of Factor Analyzers** | Both (classes × dimensions) | Continuous | Class-specific factor structures | Complex, data-hungry |
+
+The critical advantage of LCA over cluster analysis is that LCA is a model-based approach. It specifies a probability model for the data, estimates parameters via maximum likelihood, and produces fit statistics, standard errors, and posterior probabilities. Cluster analysis is a purely algorithmic procedure that optimizes a distance metric and provides none of these. You cannot evaluate the fit of a cluster solution, estimate the uncertainty of cluster assignments, or compare cluster solutions in any principled statistical way. For rigorous social science research, LCA is strongly preferred whenever the research question is typological and the data are categorical.
+
+---
+
+# Formulating an LCA-Compatible Research Question
+
+## The Three Components
+
+A well-formed LCA research question specifies three elements:
+
+1. **The latent construct:** What unobserved typology do you suspect exists? This is the theoretical entity that LCA is designed to detect. It should be stated in terms of *types* or *configurations* or *profiles*, not in terms of variable relationships or dimensional variation.
+
+2. **The indicator domain:** What set of observed attitudes, behaviors, or characteristics will you use as the empirical basis for detecting these types? The indicators must be categorical, theoretically connected to the latent construct, and sufficiently diverse to capture the hypothesized variation across types.
+
+3. **The population:** In whom do you expect these types to exist? The population definition constrains your sampling strategy and the generalizability of your results.
+
+## Examples of Well-Formed LCA Research Questions
+
+**Political sociology:**
+"What distinct configurations of attitudes toward economic redistribution, immigration, national identity, and institutional trust exist among adult citizens in [country], and do these configurations correspond to theoretically predicted ideological types?"
+
+This question specifies the latent construct (attitude configurations / ideological types), the indicator domain (four attitude dimensions), and the population (adult citizens). It also signals a validation strategy (comparison with theoretically predicted types).
+
+**Health behavior:**
+"Can we identify qualitatively distinct profiles of health risk behavior among adolescents, based on their reported patterns of smoking, alcohol use, drug experimentation, and unsafe sexual behavior?"
+
+This specifies the construct (risk behavior profiles), the indicators (four behaviors), and the population (adolescents).
+
+**Civic engagement:**
+"Are there latent subgroups of civic participation among urban residents, characterized by different combinations of voting, volunteering, protest participation, and community organizing, and do these subgroups differ by socioeconomic status?"
+
+This adds a covariate hypothesis (SES predicts class membership), which will be tested in the covariate modeling step (Module 10).
+
+## Poorly Formed Research Questions for LCA
+
+"Is there a relationship between education and political attitudes?" — This is a variable-oriented question. It asks about a bivariate association, not about types. Appropriate method: regression.
+
+"What are the main dimensions of political attitudes?" — This is a dimensional question. It asks about continuous latent factors, not categorical types. Appropriate method: factor analysis.
+
+"How do political attitudes differ between men and women?" — This is a group comparison question with an observed grouping variable (gender). It does not require LCA. If, however, the question is "Do the same latent attitude types exist for men and women, and are they structured identically?" — then a multiple-group LCA would be appropriate.
+
+"What types of people exist in my dataset?" — This is too vague. It specifies no latent construct, no indicator domain, and no theoretical basis for expecting types. LCA will produce classes, but they will be uninterpretable.
+
+---
+
+# The Role of Theory in LCA Research
+
+## Why Theory Is Not Optional
+
+The methodological literature on LCA is emphatic: theory must guide the analysis. This is not a platitude. The specific demands of LCA make theoretical guidance concretely necessary at multiple stages:
+
+**Indicator selection** — Theory determines which survey items you include as indicators. The classes you find are entirely a function of which items you put into the model. If you include the wrong items, or an unbalanced set of items, you will find classes that reflect your measurement decisions rather than meaningful population structure.
+
+**Model selection** — When statistical criteria disagree (and they often do), theory provides the tiebreaker. If the BIC favors a 3-class model and the AIC favors a 5-class model, you need a theoretical basis for deciding which is more plausible.
+
+**Interpretation** — The classes are defined by item-response probability patterns. Translating those patterns into meaningful labels requires substantive knowledge of the domain. Without theory, you have numbers without meaning.
+
+**Validation** — Construct validity requires predicting how the classes should relate to external variables. These predictions come from theory. Without them, you have no benchmark for evaluating whether your classes are meaningful.
+
+**Defense against the naming fallacy** — The naming fallacy occurs when a researcher assigns a theoretically loaded label to a class that does not empirically warrant it. The only defense is deep familiarity with the theoretical construct and careful comparison between the empirical profile and the theoretical prediction.
+
+## Constructing a Theoretical Framework for LCA
+
+Your theoretical framework should accomplish four things:
+
+### 1. Justify the Expectation of Discrete Types
+
+Why do you believe the population contains qualitatively distinct subgroups rather than continuous variation? This requires a theoretical argument, not just an empirical observation. In political sociology, for example, you might draw on:
+
+- **Converse's (1964) constraint theory:** Political attitudes are organized into "belief systems" whose internal coherence varies across individuals. Some people have tightly constrained ideologies (all attitudes move together); others hold loosely connected or contradictory views. This predicts qualitatively different *configurations*, not just different *levels*, of political engagement.
+- **Bourdieu's habitus:** Dispositions toward cultural and political practices are class-structured and internally coherent. Different social positions produce different habitus, which manifest as distinct taste configurations or attitude profiles.
+- **Baldassarri and Goldberg's (2014) argument about political polarization:** Americans are not uniformly polarized on a single dimension; rather, polarization is multidimensional and heterogeneous, with some individuals aligning neatly on a left-right axis and others exhibiting cross-cutting positions.
+
+### 2. Specify the Indicator Domain
+
+Which aspects of the construct should the indicators tap? The indicators must collectively represent the full scope of the latent typology you are trying to detect. If your theory predicts that political types are defined by positions on economic, cultural, and institutional dimensions, then your indicators must include items from all three dimensions.
+
+The theoretical framework should also address dimensional balance. If one dimension is overrepresented in the indicators, the resulting classes will be disproportionately driven by that dimension — not because it is theoretically more important, but because it has more statistical weight. This is a design-level decision that cannot be corrected post-hoc.
+
+### 3. Generate Predictions About Class Structure
+
+Theory should generate expectations about:
+
+- **How many classes** you expect. This does not need to be a precise number, but it should specify a plausible range. If your theory predicts a simple binary (e.g., "constrained" vs. "unconstrained" belief systems), you would expect 2–3 classes. If it predicts a richer typology (e.g., multiple ideological profiles that cross-cut standard dimensions), you would expect 3–6.
+- **What the classes should look like.** Even rough predictions — "we expect one class that endorses all economic items but rejects all cultural items" — provide a benchmark for evaluating the model output and labeling the classes.
+- **How the classes should relate to external variables.** These predictions become your construct validity tests. For example: "We expect the 'progressive' class to contain a higher proportion of younger, more educated respondents and to predict left-party voting."
+
+### 4. Identify Boundaries and Scope Conditions
+
+The theoretical framework should specify the population for which the typology is expected to hold, and any conditions under which it might not hold (e.g., "this typology was developed for Western democracies and may not generalize to authoritarian contexts"). This helps you design appropriate sampling and frame your generalizability claims honestly.
+
+---
+
+# The Worked Example: Study Setup
+
+Throughout this course, we use a single worked example that threads through every module. All R code operates on the same dataset, and all methodological decisions are made in the context of this study.
+
+## Research Question
+
+"What distinct configurations of political attitudes exist among adult survey respondents, based on their positions on redistribution, immigration restriction, national pride, trust in government, support for traditional values, and environmental regulation? Do these configurations correspond to theoretically predicted ideological types, and are they predicted by age, gender, and education?"
+
+## Theoretical Framework
+
+Drawing on the belief systems literature (Converse, 1964; Baldassarri & Goldberg, 2014) and the cultural sociology of political attitudes (Bonikowski, 2021; Daenekindt et al., 2017), we theorize that political attitudes do not vary independently but cluster into internally coherent configurations. We expect these configurations to capture both *alignment* (where attitudes across domains reinforce each other, as in a consistent "progressive" or "conservative" profile) and *cross-cutting* patterns (where attitudes in one domain do not predict attitudes in another, such as individuals who are economically progressive but culturally conservative).
+
+We make the following predictions:
+
+1. We expect to find at least one class characterized by consistently progressive responses across all indicators (pro-redistribution, pro-immigration, low national pride, high institutional trust, anti-traditional values, pro-environment).
+2. We expect at least one class characterized by consistently conservative responses (the inverse pattern).
+3. We expect at least one "cross-cutting" class that breaks the standard progressive-conservative alignment — for instance, a "communitarian" class that supports redistribution and environmental regulation but also endorses immigration restriction, national pride, and traditional values.
+4. We predict that class membership will be associated with age (older respondents more likely in conservative or communitarian classes), education (higher education associated with progressive or libertarian classes), and gender (with specific directional hypotheses depending on the domain).
+
+## Indicators
+
+Six binary items spanning three subdomains:
+
+- **Economic:** Redistribution (REDIST), Environmental regulation (ENVIR)
+- **Cultural/National:** Immigration restriction (IMMIG), National pride (PRIDE), Traditional values (TRAD)
+- **Institutional:** Trust in government (TRUST)
+
+## Population
+
+Adult residents (18+) of a national population.
+
+## Covariates
+
+Age (continuous), gender (binary), education (three-level ordinal: secondary or less, some post-secondary, university degree).
+
+---
+
+# Summary
+
+Before proceeding to Module 2, verify that you can answer the following questions for your own study:
+
+- Is my research question typological (about types/configurations) rather than dimensional (about continuous variation)?
+- Do I have a theoretical reason to expect discrete subgroups in my population?
+- Can I specify which indicator domain the subgroups should be defined by?
+- Can I generate at least rough predictions about the number of classes, their profiles, and their relationships to external variables?
+- Have I identified the population for which my typology should hold?
+
+If the answer to any of these is "no," you need to develop your theoretical framework further before proceeding with the technical steps of the analysis.
+
+---
+
+# References
+
+Baldassarri, D., & Goldberg, A. (2014). Neither ideologues nor agnostics: Alternative voters' belief system in an age of partisan politics. *American Journal of Sociology, 120*(1), 45–95.
+
+Bonikowski, B. (2021). Mapping culture with latent class analysis: A response to Eger and Hjerm. *Nations and Nationalism, 27*(4), 926–941.
+
+Collins, L. M., & Lanza, S. T. (2010). *Latent class and latent transition analysis: With applications in the social, behavioral, and health sciences.* Wiley.
+
+Converse, P. E. (1964). The nature of belief systems in mass publics. In D. Apter (Ed.), *Ideology and discontent* (pp. 206–261). Free Press.
+
+Daenekindt, S., de Koster, W., & van der Waal, J. (2017). How people organise cultural attitudes: Cultural belief systems and the populist radical right. *West European Politics, 40*(4), 791–811.
+
+Weller, B. E., Bowen, N. K., & Faubert, S. J. (2020). Latent class analysis: A guide to best practice. *Journal of Black Psychology, 46*(4), 287–311.
+
+---
+
+```{r nav-footer, echo=FALSE, results='asis'}
+cat('<div style="margin-top:3em; padding-top:1em; border-top:1px solid #ddd; font-size:0.9em; color:#555;">
+<a href="index.html">&#8617; Course Index</a>
+</div>')
+```

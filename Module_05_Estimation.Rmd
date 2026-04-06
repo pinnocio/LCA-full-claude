@@ -1,0 +1,426 @@
+---
+title: "Module 5: Model Estimation"
+subtitle: "LCA for Social Science Research"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    number_sections: true
+    theme: readable
+    highlight: tango
+    code_folding: show
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE, warning = FALSE, message = FALSE,
+  fig.width = 8, fig.height = 5, fig.align = "center"
+)
+```
+
+# Purpose of This Module
+
+This module explains how LCA models are estimated — the computational machinery that takes your observed data and produces the parameter estimates (class prevalences and item-response probabilities) that define the latent classes. Understanding this process is not merely academic. Several practical problems that researchers encounter — non-convergence, unstable estimates, conflicting results across runs — are direct consequences of how the estimation algorithm works. Knowing the algorithm allows you to diagnose and resolve these problems rather than treating them as mysterious failures.
+
+```{r load-data}
+load("lca_prepared_data.RData")
+library(poLCA)
+library(tidyverse)
+library(knitr)
+library(kableExtra)
+```
+
+---
+
+# The LCA Likelihood Function
+
+## What We Are Estimating
+
+An LCA model has two types of parameters:
+
+1. **Latent class prevalences** ($\gamma_c$): The proportion of the population belonging to each latent class $c$, where $c = 1, \ldots, C$. These sum to 1.
+
+2. **Item-response probabilities** ($\rho_{j,r|c}$): The probability that a member of class $c$ gives response $r$ to item $j$. For a binary item with responses 1 and 2, there is one free probability per class per item (the other is determined by the constraint that they sum to 1).
+
+## The Local Independence Assumption
+
+The entire LCA model rests on a single foundational assumption: **local independence**. This assumption states that, conditional on an individual's latent class membership, their responses to the observed indicator variables are statistically independent.
+
+In practical terms, this means: within any given class, knowing how a person answered one survey item tells you nothing about how they answered any other item. Whatever correlation exists among the items in the overall sample is assumed to be entirely explained by the existence of the latent classes. Once you "control for" class membership, the correlations disappear.
+
+Why does this matter? Consider two items: "Immigration should be restricted" and "Traditional family values should be preserved." In the overall sample, these are likely positively correlated — people who agree with one tend to agree with the other. The local independence assumption says this correlation arises because certain types of people (e.g., "conservatives") tend to agree with both. Within the conservative class, the responses are independent — some conservatives who agree with immigration restriction may still disagree with traditional values, and vice versa, but these individual variations are random, not systematic.
+
+If local independence is violated — if items remain correlated within a class even after accounting for class membership — the model is misspecified. The classes it produces will be incorrect, because the model is trying to account for within-class correlations by creating additional classes that may not correspond to real subgroups.
+
+Local independence is directly reflected in the likelihood function: the probability of an individual's response pattern, conditional on their class, is the **product** of the individual item-response probabilities. This product form is mathematically equivalent to the assumption of independence.
+
+In social science research with attitudinal data, strict local independence is an idealization. Complex attitudes may retain residual correlations within classes. However, the assumption is typically tenable as an approximation, and minor violations are generally tolerable. Severe violations should be addressed by adding indicators, reconsidering the number of classes, or allowing for within-class correlations (which requires more advanced models such as factor mixture models, available in Mplus).
+
+## The Likelihood
+
+The likelihood function expresses the probability of observing the entire dataset as a function of these parameters. For individual $i$ with observed response pattern $\mathbf{y}_i = (y_{i1}, y_{i2}, \ldots, y_{iJ})$, the probability of that pattern under the mixture model is:
+
+$$P(\mathbf{y}_i) = \sum_{c=1}^{C} \gamma_c \prod_{j=1}^{J} \rho_{j, y_{ij} | c}$$
+
+This equation reads: the probability of individual $i$'s response pattern is the sum, across all latent classes, of the class prevalence times the product of the item-response probabilities for their specific responses, conditional on class membership. The product across items reflects the local independence assumption — within a class, responses to different items are statistically independent.
+
+The full log-likelihood for the entire sample is:
+
+$$\ell(\boldsymbol{\gamma}, \boldsymbol{\rho}) = \sum_{i=1}^{N} \ln \left[ \sum_{c=1}^{C} \gamma_c \prod_{j=1}^{J} \rho_{j, y_{ij} | c} \right]$$
+
+Maximum likelihood estimation seeks the values of $\boldsymbol{\gamma}$ and $\boldsymbol{\rho}$ that maximize this function — the parameter values under which the observed data are most probable.
+
+## Why There Is No Closed-Form Solution
+
+Unlike linear regression, where you can derive a formula that directly computes the optimal parameter values, the LCA log-likelihood has no closed-form maximum. The summation inside the logarithm (the mixture across classes) prevents algebraic simplification. The parameters must be found numerically, through iterative search.
+
+---
+
+# The Expectation-Maximization (EM) Algorithm
+
+## Overview
+
+The EM algorithm is the standard method for estimating finite mixture models, including LCA. It was formalized by Dempster, Laird, and Rubin (1977) and treats the unobserved class memberships as missing data. The algorithm alternates between two steps — Expectation (E) and Maximization (M) — that are iterated until the parameter estimates stabilize.
+
+## The E-Step (Expectation)
+
+In the E-step, the algorithm computes the posterior probability that each individual belongs to each latent class, given their observed response pattern and the current parameter estimates. This is a direct application of Bayes' theorem:
+
+$$w_{ic} = P(C_i = c \mid \mathbf{y}_i) = \frac{\gamma_c \prod_{j=1}^{J} \rho_{j, y_{ij} | c}}{\sum_{c'=1}^{C} \gamma_{c'} \prod_{j=1}^{J} \rho_{j, y_{ij} | c'}}$$
+
+where $w_{ic}$ is the posterior probability that individual $i$ belongs to class $c$. The numerator is the joint probability of class $c$ and the observed response pattern; the denominator is the marginal probability of the response pattern (summing over all classes), which serves as a normalizing constant ensuring the posteriors sum to 1.
+
+At the start of the algorithm, the current parameter estimates are initialized (either randomly or from user-specified starting values). The E-step uses these initial estimates to compute a first set of posterior probabilities. These posteriors are "soft" class assignments — each individual is fractionally allocated to every class, weighted by how well their response pattern matches each class's profile under the current parameter values.
+
+## The M-Step (Maximization)
+
+In the M-step, the algorithm updates the parameter estimates using the posterior probabilities from the E-step. The updated estimates maximize the expected complete-data log-likelihood — the log-likelihood that would be computed if the class memberships were observed rather than latent.
+
+**Updating class prevalences:**
+
+$$\hat{\gamma}_c = \frac{1}{N} \sum_{i=1}^{N} w_{ic}$$
+
+The updated prevalence of class $c$ is the average posterior probability of class $c$ across all individuals. If the posteriors strongly concentrate on one class for most individuals, the prevalences will reflect the proportions of the sample assigned to each class. If the posteriors are diffuse (high uncertainty), the prevalences will be averaged across the uncertain assignments.
+
+**Updating item-response probabilities:**
+
+$$\hat{\rho}_{j,r|c} = \frac{\sum_{i=1}^{N} w_{ic} \cdot \mathbb{1}(y_{ij} = r)}{\sum_{i=1}^{N} w_{ic}}$$
+
+The updated probability of response $r$ to item $j$ in class $c$ is the weighted proportion of individuals giving response $r$, where the weights are the posterior probabilities of class $c$. This is a weighted frequency — each individual contributes to every class's item-response probabilities, but weighted by how likely they are to belong to that class.
+
+## Iteration
+
+The E-step and M-step are repeated. Each M-step produces new parameter estimates, which are fed into the next E-step to produce updated posteriors, which are used in the next M-step, and so on. With each iteration, the log-likelihood is guaranteed to increase (or stay the same). The algorithm converges when the increase becomes negligibly small.
+
+## A Concrete Numerical Example
+
+To make this abstract process tangible, consider the simplest possible case: 4 individuals, 2 binary items, 2 classes. Suppose the current parameter estimates (at the start of an iteration) are:
+
+- Class prevalences: $\gamma_1 = 0.50$, $\gamma_2 = 0.50$
+- Item-response probabilities (P of responding "Agree"):
+  - Class 1: Item A = 0.90, Item B = 0.20
+  - Class 2: Item A = 0.30, Item B = 0.80
+
+Now consider Person 1, who responded **Agree** to Item A and **Disagree** to Item B. What is the probability of this pattern in each class?
+
+- In Class 1: $0.90 \times 0.80 = 0.72$ (high probability of Agree on A, high probability of Disagree on B)
+- In Class 2: $0.30 \times 0.20 = 0.06$ (low probability of Agree on A, low probability of Disagree on B)
+
+The E-step applies Bayes' theorem to compute the posterior:
+
+$$P(\text{Class 1} \mid \text{Person 1's pattern}) = \frac{0.50 \times 0.72}{0.50 \times 0.72 + 0.50 \times 0.06} = \frac{0.36}{0.39} = 0.923$$
+
+Person 1 has a 92.3% probability of belonging to Class 1. This makes sense — their response pattern (Agree on A, Disagree on B) matches Class 1's profile much better than Class 2's.
+
+Now consider Person 2, who responded **Agree** to both items:
+
+- In Class 1: $0.90 \times 0.20 = 0.18$
+- In Class 2: $0.30 \times 0.80 = 0.24$
+
+$$P(\text{Class 1} \mid \text{Person 2's pattern}) = \frac{0.50 \times 0.18}{0.50 \times 0.18 + 0.50 \times 0.24} = \frac{0.09}{0.21} = 0.429$$
+
+Person 2's pattern does not clearly match either class. The posterior is close to 0.50 — the model is uncertain about where this person belongs. This is classification uncertainty in action.
+
+After computing posteriors for all 4 individuals (E-step), the M-step would update the parameters. For example, the new class prevalence for Class 1 would be the average of all individuals' Class 1 posteriors: $(0.923 + 0.429 + \ldots) / 4$. The new item-response probabilities would be weighted frequencies: the probability of Agree on Item A in Class 1 is the weighted proportion of "Agree" responses, where the weights are the Class 1 posteriors.
+
+Then the E-step runs again with the updated parameters, producing new posteriors. Then the M-step updates again. This cycle repeats until the parameters stabilize.
+
+A key property of the EM algorithm is its monotonicity — the log-likelihood never decreases between iterations. This means the algorithm always moves toward a better solution. However, it does not guarantee that the final solution is the best possible solution (the global maximum). It guarantees only that it is a local maximum — a peak from which no small step improves the likelihood.
+
+## Historical Context and Variants
+
+Modern LCA software implements the EM algorithm in conjunction with Goodman's proportional fitting method. This pairing is historically significant because it naturally constrains all estimated probabilities to lie strictly within the 0 to 1 range. Earlier methods of latent structure analysis, predating Goodman's work, could produce "improper solutions" — estimated probabilities that were negative or exceeded 1, which are substantively meaningless. The EM-Goodman approach eliminates this problem entirely.
+
+In some implementations, the EM algorithm is supplemented by the Newton-Raphson algorithm for faster convergence near the maximum. The Newton-Raphson method uses information about the curvature of the log-likelihood surface (second derivatives) to take more efficient steps, but it requires more computation per iteration and can be unstable far from the solution. The combination of EM (for stable initial convergence) and Newton-Raphson (for efficient final convergence) is used in software like Latent GOLD but not in `poLCA`, which relies on EM alone.
+
+---
+
+# Convergence
+
+## The Convergence Criterion
+
+The algorithm must stop at some point. The standard stopping rule monitors the change in parameter estimates or the log-likelihood between consecutive iterations. When this change falls below a specified tolerance, the algorithm is deemed to have converged.
+
+The formal convergence index most commonly used is the **Maximum Absolute Deviation (MAD)**, which tracks the largest absolute difference between the parameter estimates from one iteration to the next. When the MAD satisfies:
+
+$$MAD^{(t)} = \max_k \left| \hat{\theta}_k^{(t)} - \hat{\theta}_k^{(t-1)} \right| \leq \epsilon$$
+
+where $\epsilon$ is the convergence criterion, the algorithm stops. You should set a strict convergence criterion — Collins and Lanza (2010) recommend $\epsilon \leq 0.000001$ — so the algorithm stops only when changes between iterations become trivially small, confirming that it has reached the peak of the likelihood function.
+
+In `poLCA`, the convergence criterion is controlled by the `tol` argument. The default is $1 \times 10^{-10}$, which is stricter than the Collins and Lanza recommendation and is appropriate for research use.
+
+## Maximum Iterations
+
+The `maxiter` argument sets an upper limit on the number of EM iterations. If the algorithm reaches `maxiter` without satisfying the convergence criterion, it stops and returns the current estimates — but these estimates are unreliable because the algorithm did not find the maximum.
+
+**What to do if the model does not converge:**
+
+1. **Increase `maxiter`.** Some models, especially those with many classes or poorly separated profiles, require thousands of iterations. Try increasing to 5000 or 10000.
+2. **Check the data.** Non-convergence can indicate data problems — extreme sparseness, variables with near-constant values, or coding errors.
+3. **Reduce model complexity.** The model may have too many classes for the data. Try a model with fewer classes.
+4. **Use more random starts.** Non-convergence from a specific starting point does not mean the model is unfittable — a different starting point may converge successfully.
+
+```{r convergence-demo}
+# Demonstrate convergence with verbose output for a 3-class model
+set.seed(100)
+demo_model <- poLCA(f_lca, data = sim_data, nclass = 3, 
+                     maxiter = 50, nrep = 1, tol = 1e-10, 
+                     verbose = TRUE, graphs = FALSE)
+```
+
+The verbose output shows the log-likelihood at each iteration. You should see it increasing monotonically and stabilizing.
+
+---
+
+# The Local Maxima Problem
+
+## What Local Maxima Are
+
+The LCA log-likelihood surface — the relationship between the parameter values and the log-likelihood — can have multiple peaks. The global maximum is the highest peak; all other peaks are local maxima. The EM algorithm, because it is a hill-climbing procedure, will converge to whichever peak is nearest to its starting point. If it starts in the "basin of attraction" of a local maximum, it will converge there and return suboptimal parameter estimates.
+
+Local maxima are not bugs in the software. They are a mathematical property of mixture model likelihood surfaces. They become more common and more problematic as:
+
+- The number of classes increases (more complex models have more peaks).
+- Class separation decreases (overlapping classes create ridges and saddle points).
+- The sample size is small relative to model complexity.
+- The data are sparse.
+
+## How to Detect Local Maxima
+
+The primary detection strategy is to run the model from multiple random starting values and compare the resulting log-likelihoods.
+
+- If all (or nearly all) random starts converge to the same log-likelihood value, you can be confident that value is the global maximum.
+- If the log-likelihoods scatter across multiple distinct values, the surface has multiple peaks. The largest log-likelihood among the starts is the best candidate for the global maximum, but there is no guarantee that even the best observed value is the global maximum — there could be an even higher peak that none of your starts found.
+
+```{r local-maxima-demo}
+# Run the 4-class model from 30 independent random starts
+# Record the log-likelihood from each
+
+n_starts <- 30
+ll_record <- data.frame(start = 1:n_starts, loglik = NA)
+
+for (s in 1:n_starts) {
+  temp <- poLCA(f_lca, data = sim_data, nclass = 4, 
+                maxiter = 3000, nrep = 1, tol = 1e-10, verbose = FALSE)
+  ll_record$loglik[s] <- temp$llik
+}
+
+# Visualize the distribution of log-likelihoods
+ggplot(ll_record, aes(x = loglik)) +
+  geom_histogram(bins = 15, fill = "steelblue", color = "white", alpha = 0.8) +
+  geom_vline(xintercept = max(ll_record$loglik), 
+             linetype = "dashed", color = "red", linewidth = 1) +
+  labs(title = "Distribution of Log-Likelihoods from 30 Random Starts (4-Class Model)",
+       x = "Log-Likelihood", y = "Count") +
+  annotate("text", x = max(ll_record$loglik), y = Inf, 
+           label = paste("Best:", round(max(ll_record$loglik), 2)),
+           vjust = 2, hjust = -0.1, color = "red") +
+  theme_minimal()
+```
+
+```{r local-maxima-table}
+# Tabulate the log-likelihood values
+ll_freq <- ll_record %>%
+  mutate(loglik_rounded = round(loglik, 1)) %>%
+  count(loglik_rounded) %>%
+  arrange(desc(loglik_rounded))
+
+kable(ll_freq, 
+      col.names = c("Log-Likelihood (rounded)", "Frequency"),
+      caption = "Frequency of Log-Likelihood Values Across Random Starts")
+```
+
+**Interpreting this output:** If one log-likelihood value dominates the frequency table (e.g., 25 out of 30 starts converge there), and it is the highest value observed, you have strong evidence for the global maximum. If the frequencies are spread across many values, the model is poorly identified — increase the number of starts, simplify the model, or both.
+
+## The `nrep` Argument
+
+`poLCA`'s `nrep` argument automates the random-starts procedure. When `nrep = 50`, the function runs the full EM estimation 50 times from different random starting values and returns only the solution with the highest log-likelihood.
+
+```{r nrep-demo}
+# Estimate a 4-class model with 50 random starts
+set.seed(123)
+model_4class <- poLCA(f_lca, data = sim_data, nclass = 4,
+                       maxiter = 3000, nrep = 50, tol = 1e-10,
+                       verbose = FALSE, graphs = FALSE)
+
+cat("Best log-likelihood from 50 starts:", model_4class$llik, "\n")
+cat("Number of parameters:", model_4class$npar, "\n")
+```
+
+**Recommended `nrep` values:**
+
+| Model Complexity | nrep |
+|-----------------|------|
+| 1–2 classes | 10–20 (local maxima rare) |
+| 3–4 classes | 50 |
+| 5–6 classes | 100 |
+| 7+ classes or sparse data | 200+ |
+
+These are minimums. If you have any doubt, increase `nrep`. The computational cost is linear — doubling `nrep` roughly doubles the runtime. For most social science datasets, even `nrep = 200` completes in seconds to minutes.
+
+---
+
+# Label Switching
+
+## What It Is
+
+The numerical labels assigned to latent classes by the software are arbitrary. They depend entirely on the random starting values used for a particular estimation run. If you run the same model twice with different seeds, the parameter estimates may be identical in substance but the classes may be numbered differently. What was "Class 1" in the first run might be "Class 3" in the second run.
+
+This is called label switching. It is not an error — it is an inherent property of mixture models. The likelihood function is invariant to permutations of the class labels: relabeling the classes does not change the log-likelihood.
+
+## Why It Matters
+
+Label switching is harmless for estimation but can cause confusion during interpretation:
+
+- If you are comparing output from multiple runs (e.g., checking for local maxima), you must verify that differences in parameter estimates are genuine differences and not merely label permutations. Two solutions with the same log-likelihood but different-looking parameter tables may be the same solution with the labels swapped.
+- If you save class assignments from one run and later re-estimate the model, the new "Class 1" may correspond to the old "Class 3."
+
+## How to Handle It
+
+Always identify classes by their substantive profiles, not by their numerical labels. When presenting results:
+
+- Assign descriptive labels (e.g., "Progressive," "Conservative") based on the item-response probability patterns.
+- Order classes in a consistent, meaningful way (e.g., by prevalence, or by a theoretically relevant ordering).
+- When comparing runs, match classes by their profiles, not their numbers.
+
+```{r label-switching-demo}
+# Run two models with different seeds to demonstrate label switching
+set.seed(111)
+run_A <- poLCA(f_lca, data = sim_data, nclass = 4, 
+               maxiter = 3000, nrep = 10, verbose = FALSE)
+
+set.seed(222)
+run_B <- poLCA(f_lca, data = sim_data, nclass = 4, 
+               maxiter = 3000, nrep = 10, verbose = FALSE)
+
+cat("Run A log-likelihood:", run_A$llik, "\n")
+cat("Run B log-likelihood:", run_B$llik, "\n")
+cat("\nRun A class prevalences:", round(run_A$P, 3), "\n")
+cat("Run B class prevalences:", round(run_B$P, 3), "\n")
+cat("\nNote: If the log-likelihoods match but prevalences appear in a",
+    "different order,\nlabel switching has occurred. The solutions are identical.\n")
+```
+
+---
+
+# Bayesian Priors for Sparseness
+
+## The Problem
+
+When the contingency table is sparse — many cells with zero observed counts — the maximum likelihood estimates can become unstable. In extreme cases, an item-response probability may be estimated at exactly 0 or exactly 1 (a "boundary estimate"). This causes two problems:
+
+1. The log-likelihood becomes infinite (log of 0), which breaks the estimation.
+2. Boundary estimates are substantively implausible — it is unrealistic that 100% or 0% of a class endorses an item.
+
+Sparseness is most problematic in models with many indicators, many response categories, many classes, or covariates that create small subgroups.
+
+## The Flattening Prior
+
+To stabilize estimation, you can apply a Bayesian prior that adds a small amount of pseudo-data to every cell of the contingency table. This is called a "flattening prior" because it slightly smooths the distribution, preventing any cell from having an observed count of exactly zero.
+
+In `poLCA`, this is not directly implemented as a user-facing argument. However, you can approximate the effect by adding a small constant to the data. If you are using Mplus or Latent GOLD, the flattening prior is available as a built-in option (often called a "Dirichlet prior" with a small hyperparameter).
+
+In practice, if you encounter boundary estimates in `poLCA` (item-response probabilities at exactly 0 or 1), consider:
+
+1. Collapsing response categories to reduce sparseness.
+2. Dropping indicators that contribute to the sparseness without providing substantive information.
+3. Reducing the number of classes.
+
+---
+
+# The Sequential Estimation Procedure
+
+## Running the Full Sequence
+
+With the estimation mechanics understood, you can now run the full sequence of models. This sequence will be used in Module 6 for model selection.
+
+```{r sequential-estimation}
+max_classes <- 6
+lca_models <- list()
+
+for (k in 1:max_classes) {
+  set.seed(123)
+  lca_models[[k]] <- poLCA(f_lca, data = sim_data, nclass = k,
+                             maxiter = 5000, nrep = 50, tol = 1e-10,
+                             verbose = FALSE, graphs = FALSE)
+  cat(sprintf("Model %d-class: LL = %.2f, BIC = %.2f, converged = %s\n",
+              k, lca_models[[k]]$llik, lca_models[[k]]$bic,
+              ifelse(lca_models[[k]]$numiter < 5000, "yes", "NO")))
+}
+```
+
+```{r save-models}
+# Save the estimated models for use in subsequent modules
+save(lca_models, file = "lca_estimated_models.RData")
+cat("\nAll models saved to lca_estimated_models.RData\n")
+```
+
+---
+
+# Troubleshooting Guide
+
+| Problem | Symptom | Cause | Solution |
+|---------|---------|-------|----------|
+| Non-convergence | Warning: "model did not converge" | Model too complex, poor starting values, or data issues | Increase `maxiter`; increase `nrep`; reduce classes |
+| Boundary estimates | Item-response probabilities at exactly 0 or 1 | Sparseness; empty cells in contingency table | Collapse response categories; reduce indicators; reduce classes |
+| Local maxima | Different log-likelihoods from different runs | Multimodal likelihood surface | Increase `nrep` to 100+ |
+| Slow convergence | Thousands of iterations with tiny improvements | Flat likelihood surface near the peak | Increase `maxiter`; ensure this isn't a local maximum |
+| Error: "response levels must be positive integers" | poLCA throws an error | Variables contain 0, NA, or non-integer values in indicator columns | Recode: add 1 to 0/1 variables; ensure NA for missing |
+
+---
+
+# Summary
+
+After completing this module, you should understand:
+
+1. What the LCA likelihood function represents and why it has no closed-form solution.
+2. How the EM algorithm iterates between the E-step (computing posteriors) and the M-step (updating parameters).
+3. What convergence means and how to set appropriate criteria (`tol`, `maxiter`).
+4. Why local maxima occur and how to detect them using multiple random starts.
+5. What label switching is and how to handle it.
+6. How to run the full sequential estimation procedure in `poLCA`.
+7. How to diagnose and resolve common estimation problems.
+
+The estimated models are saved for use in **Module 6: Model Selection**, where you will use fit statistics and theoretical judgment to determine the optimal number of classes.
+
+---
+
+# References
+
+Collins, L. M., & Lanza, S. T. (2010). *Latent class and latent transition analysis: With applications in the social, behavioral, and health sciences.* Wiley.
+
+Dempster, A. P., Laird, N. M., & Rubin, D. B. (1977). Maximum likelihood from incomplete data via the EM algorithm. *Journal of the Royal Statistical Society, Series B, 39*(1), 1–38.
+
+Eshima, N. (2022). *An introduction to latent class analysis: Methods and applications.* Springer.
+
+Weller, B. E., Bowen, N. K., & Faubert, S. J. (2020). Latent class analysis: A guide to best practice. *Journal of Black Psychology, 46*(4), 287–311.
+
+---
+
+```{r nav-footer, echo=FALSE, results='asis'}
+cat('<div style="margin-top:3em; padding-top:1em; border-top:1px solid #ddd; font-size:0.9em; color:#555;">
+<a href="index.html">&#8617; Course Index</a>
+</div>')
+```
