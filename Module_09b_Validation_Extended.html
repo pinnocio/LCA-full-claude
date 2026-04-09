@@ -1613,7 +1613,8 @@ associations</li>
 <li>Measurement invariance</li>
 </ol>
 <p>It also covers the naming fallacy, the relationship between fit and
-validity, statistical cross-validation, and reporting standards.</p>
+validity, statistical cross-validation, missing data handling, and
+reporting standards.</p>
 <hr />
 </div>
 <div id="theoretical-pre-specification-as-a-precondition" class="section level1" number="2">
@@ -2176,8 +2177,69 @@ class — an expected association that confirmed the construct validity of
 the health behavior typology.</p>
 </blockquote>
 </div>
-<div id="evidence-strength-and-interpretive-rules" class="section level2" number="6.4">
-<h2><span class="header-section-number">6.4</span> Evidence Strength and
+<div id="covariate-taxonomy" class="section level2" number="6.4">
+<h2><span class="header-section-number">6.4</span> Covariate
+Taxonomy</h2>
+<p>External variables used to test construct validity span five broad
+domains:</p>
+<p><strong>1. Demographic and Socioeconomic Characteristics</strong>
+Baseline structural factors are among the most universally used
+covariates, as they provide foundational context for who belongs to
+which class.</p>
+<ul>
+<li><em>Gender and age:</em> Used to understand varying developmental
+pathways or risk profiles</li>
+<li><em>Parental education level:</em> Gauges socioeconomic background;
+e.g., maternal education predicting adolescent membership in “Healthy”
+vs. “Unhealthy” behavioral classes</li>
+<li><em>Income and poverty level:</em> Metrics like federal poverty
+level assess how financial resources influence class membership</li>
+<li><em>Ethnicity and primary language spoken at home:</em> Explore
+cultural or demographic variation within latent typologies</li>
+</ul>
+<p><strong>2. Ideological, Cultural, and Political Beliefs</strong> When
+building typologies of cultural or political sentiments, ideological
+covariates confirm that the classes map onto real-world attitudes.</p>
+<ul>
+<li><em>Political affiliation:</em> Democrat, Republican,
+Independent</li>
+<li><em>Religious affiliation and religiosity:</em> Used to validate
+classes dealing with lifestyle factors or traditional attitudes</li>
+<li><em>Specific policy opinions:</em> In nationalism studies, external
+opinions on ethnoracial group relations, economic redistribution,
+international cooperation, and state protectionist policies</li>
+</ul>
+<p><strong>3. Prior or Concurrent Behaviors and Substance Use</strong>
+In public health, psychology, and criminology, specific past behaviors
+predict membership in risk-based classes.</p>
+<ul>
+<li><em>Substance use:</em> Cigarette use, lifetime marijuana use,
+weekly alcohol use, past-year drunkenness — used to predict transitions
+into high-risk sexual behavior statuses or clinical depression
+classes</li>
+<li><em>Educational behaviors:</em> School grades, records of skipping
+school</li>
+</ul>
+<p><strong>4. Distal Outcomes and Consequences</strong> Instead of
+predicting class membership from an antecedent, construct validity is
+also established by showing that classes correctly predict subsequent
+outcomes.</p>
+<ul>
+<li><em>Clinical and mental health outcomes:</em> ADHD diagnosis,
+general behavior problems — used to validate social determinants of
+health typologies</li>
+<li><em>Macro-political behaviors:</em> Voting preferences in
+presidential elections, anti-immigrant sentiment — used to validate
+political culture typologies</li>
+</ul>
+<p><strong>5. Experimental and Study Design Variables</strong>
+Covariates do not have to be respondent traits — random assignment to
+experimental conditions or treatment group membership can serve as a
+covariate. If the treatment works, the experimental covariate will
+systematically predict membership in a more favorable latent class.</p>
+</div>
+<div id="evidence-strength-and-interpretive-rules" class="section level2" number="6.5">
+<h2><span class="header-section-number">6.5</span> Evidence Strength and
 Interpretive Rules</h2>
 <p>The construct validity argument is strengthened when:</p>
 <ul>
@@ -2512,8 +2574,35 @@ the classes themselves may not mean the same thing across groups —
 comparing their prevalences would be like comparing temperatures in
 Celsius in one country and Fahrenheit in another.</p>
 </div>
-<div id="three-levels-of-invariance-testing" class="section level2" number="10.2">
-<h2><span class="header-section-number">10.2</span> Three Levels of
+<div id="why-measurement-invariance-matters" class="section level2" number="10.2">
+<h2><span class="header-section-number">10.2</span> Why Measurement
+Invariance Matters</h2>
+<p>Three distinct reasons make invariance a methodological requirement
+rather than a formality:</p>
+<p><strong>1. Accurate and meaningful group comparisons</strong> When
+item-response probabilities are proven equal across populations,
+researchers can safely conclude that any observed group differences are
+purely quantitative — differences in <em>how many</em> people belong to
+each class, not in <em>what the class means</em>. This enables direct
+“apples-to-apples” comparisons of latent class prevalences. Conversely,
+when invariance fails, comparing class prevalences across groups is an
+“apples-to-oranges” exercise: the classes represent different phenomena
+in each population, and the comparison is meaningless.</p>
+<p><strong>2. Parsimony</strong> A measurement-invariant model estimates
+item-response probabilities only once (shared across groups) rather than
+separately for each group, producing <span class="math inline">\(1/Q\)</span> the number of item-response
+parameters relative to the unconstrained model. This reduction is not
+merely aesthetic — it is a principled preference for the simplest model
+that still fits the data.</p>
+<p><strong>3. Statistical identification and stability</strong>
+Constraining item-response probabilities across groups substantially
+reduces the total number of estimated parameters. This decreases the
+likelihood of model identification problems — a frequent problem in LCA
+when too many parameters are estimated simultaneously or when sample
+sizes for individual subgroups are small.</p>
+</div>
+<div id="three-levels-of-invariance-testing" class="section level2" number="10.3">
+<h2><span class="header-section-number">10.3</span> Three Levels of
 Invariance Testing</h2>
 <p>The framework follows a sequence from least to most restrictive:</p>
 <ol style="list-style-type: decimal">
@@ -2532,40 +2621,113 @@ prevalences are additionally constrained equal. Required for comparing
 class prevalences across groups.</li>
 </ol>
 </div>
-<div id="statistical-testing" class="section level2" number="10.3">
-<h2><span class="header-section-number">10.3</span> Statistical
-Testing</h2>
-<p>Invariance is assessed by comparing the constrained model to the
-unconstrained model using:</p>
+<div id="the-g2-difference-test" class="section level2" number="10.4">
+<h2><span class="header-section-number">10.4</span> The <span class="math inline">\(G^2\)</span> Difference Test</h2>
+<p>Invariance is assessed by comparing a constrained model (Model 2:
+item-response probabilities forced equal across groups) to an
+unconstrained model (Model 1: probabilities freely estimated per group)
+using the <strong>likelihood-ratio difference test</strong>:</p>
+<p><span class="math display">\[G^2_{diff} = G^2_2 - G^2_1\]</span></p>
+<p>This statistic is evaluated against a <span class="math inline">\(\chi^2\)</span> distribution. The degrees of
+freedom are:</p>
+<p><span class="math display">\[df_{diff} = df_2 - df_1\]</span></p>
+<p>which equals the difference in the number of estimated parameters
+between the two models (<span class="math inline">\(P_1 - P_2\)</span>).
+When <span class="math inline">\(df_{diff}\)</span> is small, the <span class="math inline">\(\chi^2\)</span> approximation holds well.</p>
+<p><strong>Interpretation:</strong></p>
 <ul>
-<li><strong>Likelihood ratio test (<span class="math inline">\(\Delta
-G^2\)</span>):</strong> If non-significant, the constrained model fits
-as well as the free model — invariance holds. If significant, the
-constrained model misspecifies by forcing parameters to be identical
-across groups.</li>
-<li><strong><span class="math inline">\(\Delta\)</span>BIC and <span class="math inline">\(\Delta\)</span>AIC:</strong> For sparse data;
-negative <span class="math inline">\(\Delta\)</span>BIC favors the
-constrained model.</li>
+<li><strong>Non-significant <span class="math inline">\(G^2_{diff}\)</span>:</strong> The constrained
+model fits the data approximately as well as the unconstrained model.
+The restrictions are plausible; measurement invariance holds. Following
+parsimony, the constrained model is preferred.</li>
+<li><strong>Significant <span class="math inline">\(G^2_{diff}\)</span>:</strong> Forcing the
+item-response probabilities to be identical across groups constitutes a
+misspecification. The null hypothesis is rejected; the latent construct
+differs across populations.</li>
 </ul>
+<p><strong>Supplementary criteria:</strong> <span class="math inline">\(\Delta\)</span>BIC and <span class="math inline">\(\Delta\)</span>AIC can be used alongside the <span class="math inline">\(G^2\)</span> test, particularly when data are
+sparse. A negative <span class="math inline">\(\Delta\)</span>BIC favors
+the constrained model.</p>
+<p><strong>Critical exception — comparing models with different numbers
+of classes:</strong> The <span class="math inline">\(G^2\)</span>
+difference test is mathematically invalid for comparing models with
+different numbers of latent classes (e.g., a 3-class vs. a 4-class
+model). Even though a 3-class model might appear nested within a 4-class
+model, performing the test requires fixing one class prevalence to zero.
+This leaves the item-response probabilities for the empty class
+inestimable, and the distribution of the test statistic becomes
+undefined. For comparing different numbers of classes, use the
+parametric bootstrap likelihood-ratio test, or information criteria
+(BIC, AIC).</p>
+<p><strong>Sample size and the power problem:</strong> In large samples,
+the <span class="math inline">\(G^2\)</span> difference test has high
+power to detect even trivially small differences in item-response
+probabilities. A statistically significant result may therefore not
+indicate a conceptually important difference. Researchers must inspect
+the magnitude and pattern of the differences visually. If the profiles
+are highly similar in shape and the numeric differences are small,
+researchers may — after explicit justification — impose measurement
+invariance despite a significant <span class="math inline">\(G^2_{diff}\)</span>, prioritizing parsimony and
+interpretive stability over strict statistical adherence.</p>
+</div>
+<div id="consequences-of-failing-measurement-invariance" class="section level2" number="10.5">
+<h2><span class="header-section-number">10.5</span> Consequences of
+Failing Measurement Invariance</h2>
+<p>Failure of measurement invariance has several sequential consequences
+that must be addressed explicitly:</p>
+<p><strong>1. Fundamental shift in class interpretation</strong> When
+item-response probabilities differ across groups, the latent variable
+itself may be fundamentally different across those groups. Because class
+interpretation derives directly from item-response probabilities,
+differing probabilities mean the classes carry different conceptual
+meanings depending on the population analyzed. The differences are
+qualitative rather than merely quantitative.</p>
+<p><strong>2. Group-specific labels become necessary</strong> Because
+the classes represent different constructs across groups, researchers
+are often required to develop different interpretations and assign
+unique labels for each specific group. For example, a class labeled
+“Non-/Mild Delinquents” in a 10th-grade cohort may need to be relabeled
+“Liars Only” in an 11th-grade cohort if item-response probabilities for
+lying items differ substantially. The array of class labels may only
+partially overlap across populations.</p>
+<p><strong>3. Remediation strategies</strong> When strict invariance
+fails, researchers have three options:</p>
+<ul>
+<li><strong>Partial measurement invariance:</strong> If only a few
+item-response probabilities differ while the majority are identical,
+constrain the invariant items and allow the non-invariant items to vary
+freely. Partial invariance preserves comparability on the shared metric
+while honestly acknowledging cross-group differences. Non-invariant
+items must be reported and theoretically explained.</li>
+<li><strong>Invariance in a subset of groups:</strong> When more than
+two groups are compared, invariance may hold for some groups but not
+others. Researchers can test whether a constrained model fits an
+“equivalence subset” of groups by constraining those groups’ parameters
+while allowing the non-conforming groups to vary freely.</li>
+<li><strong>Group-specific models:</strong> When invariance fails
+broadly, separate group-specific typologies may need to be reported
+rather than a single cross-group model. Direct comparisons of class
+prevalences across these separate models are not valid without further
+justification.</li>
+</ul>
+<p><strong>4. Weighing statistical significance against conceptual
+importance</strong> A failed invariance test does not automatically
+preclude comparisons. Because the <span class="math inline">\(G^2\)</span> difference test’s power scales with
+sample size, even trivial differences can produce significant <span class="math inline">\(p\)</span>-values in large samples. Researchers
+must visually examine the magnitude and overall pattern of the
+item-response probability differences. If the overall profiles remain
+conceptually identical and numeric differences are minor, imposing
+strict measurement invariance is defensible — at the cost of slight
+misspecification but with gains in parsimony, stability, and
+interpretability.</p>
 <p>When fit criteria conflict — <span class="math inline">\(G^2\)</span>
 rejects invariance but BIC supports it — visual inspection of the freely
 estimated profiles for both groups takes priority. If profile
 differences are minor and quantitative rather than qualitative,
 constrained invariance is preferred for parsimony.</p>
-<p><strong>Partial invariance:</strong> If some items show meaningful
-differences between groups but most do not, constrain the item-response
-probabilities for invariant items while allowing non-invariant items to
-vary freely. The non-invariant items must be reported and theoretically
-explained.</p>
-<p><strong>When invariance fails completely:</strong> Qualitative
-differences across groups imply that the distinct populations
-experience, interpret, or express the underlying phenomenon in distinct
-ways. Direct comparisons of class prevalences become an
-“apples-to-oranges” exercise. The researcher may need to report
-group-specific typologies rather than a single cross-group model.</p>
 </div>
-<div id="measurement-invariance-in-r-via-glca" class="section level2" number="10.4">
-<h2><span class="header-section-number">10.4</span> Measurement
+<div id="measurement-invariance-in-r-via-glca" class="section level2" number="10.6">
+<h2><span class="header-section-number">10.6</span> Measurement
 Invariance in R via <code>glca</code></h2>
 <p>The <code>glca</code> package (Kim &amp; Chung, 2021) is the primary
 open-source R implementation for multiple-group LCA with measurement
@@ -2726,8 +2888,111 @@ configurations.</p>
 <hr />
 </div>
 </div>
-<div id="integrated-validation-workflow" class="section level1" number="13">
-<h1><span class="header-section-number">13</span> Integrated Validation
+<div id="missing-data-in-lca" class="section level1" number="13">
+<h1><span class="header-section-number">13</span> Missing Data in
+LCA</h1>
+<div id="missing-data-mechanisms" class="section level2" number="13.1">
+<h2><span class="header-section-number">13.1</span> Missing Data
+Mechanisms</h2>
+<p>Missing data in LCA is categorized into three types:</p>
+<ul>
+<li><strong>Missing completely at random (MCAR):</strong> Missingness is
+unrelated to any observed or unobserved variable. Ignorable.</li>
+<li><strong>Missing at random (MAR):</strong> Missingness is related to
+observed variables but not to the missing value itself, conditional on
+those observed variables. Ignorable.</li>
+<li><strong>Missing not at random (MNAR):</strong> Missingness is driven
+by an unobserved variable not included in the analysis. Current LCA
+methods cannot accommodate MNAR data; it produces biased results and
+requires sensitivity analysis or substantive justification.</li>
+</ul>
+<p>Modern LCA software handles MCAR and MAR through two primary
+procedures: Full-Information Maximum Likelihood (FIML) and Multiple
+Imputation (MI).</p>
+</div>
+<div id="full-information-maximum-likelihood-fiml" class="section level2" number="13.2">
+<h2><span class="header-section-number">13.2</span> Full-Information
+Maximum Likelihood (FIML)</h2>
+<p>FIML is a model-based procedure where individuals with complete and
+partially complete data are analyzed together within the same model. The
+parameter estimates are adjusted to maximize the likelihood based on all
+available information. FIML is the default estimation method in software
+packages like Mplus and requires minimal user input beyond specifying
+the missing data code.</p>
+<p><strong>Critical limitation:</strong> Current FIML approaches handle
+missingness on the latent class <em>indicators</em>, but <strong>cannot
+handle missing data on covariates or grouping variables</strong>. If an
+individual has missing data on a covariate, most software will delete
+that case entirely — potentially introducing bias and inconsistency
+between the baseline model (estimated on the full sample) and the
+covariate model (estimated on a reduced sample).</p>
+</div>
+<div id="multiple-imputation-mi" class="section level2" number="13.3">
+<h2><span class="header-section-number">13.3</span> Multiple Imputation
+(MI)</h2>
+<p>MI replaces missing values with multiple sets of plausible imputed
+values, creating several complete datasets. The LCA model is fit
+independently within each imputed dataset and the results are
+combined.</p>
+<p><strong>Advantages over FIML:</strong></p>
+<ul>
+<li>Can handle missing data on covariates — FIML’s critical limitation
+does not apply</li>
+<li>Auxiliary variables (variables related to the probability of
+missingness but not included in the final LCA model) can be incorporated
+into the imputation model to increase accuracy</li>
+</ul>
+<p><strong>Disadvantages:</strong></p>
+<ul>
+<li>Computational burden — the LCA model must be fit separately in each
+imputed dataset</li>
+<li>Identification problems may arise in some imputed datasets, and
+slightly different class solutions may emerge across datasets,
+complicating combination of results</li>
+</ul>
+</div>
+<div id="handling-missing-covariates-two-strategies" class="section level2" number="13.4">
+<h2><span class="header-section-number">13.4</span> Handling Missing
+Covariates: Two Strategies</h2>
+<p>Because FIML cannot accommodate missing covariates, researchers
+adding covariates to a previously established baseline model face a
+sample inconsistency problem. Two strategies resolve this:</p>
+<ol style="list-style-type: decimal">
+<li><p><strong>Listwise deletion before baseline estimation:</strong>
+Remove cases with missing covariate data <em>before</em> fitting the
+initial baseline model, ensuring the exact same sample is used
+throughout all analyses. This guarantees consistency but can introduce
+bias and reduce statistical power if data loss is substantial. It is
+sometimes the only viable option when using three-step covariate
+modeling approaches.</p></li>
+<li><p><strong>Prior Multiple Imputation:</strong> Apply MI before any
+analysis to preserve the full dataset and maintain statistical power.
+All covariates and their interactions must be present in the dataset
+during the imputation process. This is the preferred approach when
+covariate missingness exceeds approximately 5%.</p></li>
+</ol>
+</div>
+<div id="adjusted-g2-for-incomplete-data" class="section level2" number="13.5">
+<h2><span class="header-section-number">13.5</span> Adjusted <span class="math inline">\(G^2\)</span> for Incomplete Data</h2>
+<p>When analyzing incomplete data, the standard likelihood-ratio
+statistic <span class="math inline">\(G^2\)</span> used to assess
+absolute model fit must be adjusted. A traditional <span class="math inline">\(G^2\)</span> calculated on incomplete data is
+artificially inflated because it conflates two sources of misfit:
+departure from the model <em>and</em> departure from MCAR. The MCAR
+component is a nuisance — it can be estimated and subtracted from the
+total <span class="math inline">\(G^2\)</span> to yield an
+<strong>adjusted <span class="math inline">\(G^2\)</span></strong> that
+accurately reflects the model’s fit. Most LCA software performs this
+adjustment automatically.</p>
+<p><strong>Practical data preparation:</strong> Assign a specific
+numeric code to all missing values before running the analysis. For
+Mplus, recode all missing values to a distinct value outside the range
+of valid responses (e.g., −999).</p>
+<hr />
+</div>
+</div>
+<div id="integrated-validation-workflow" class="section level1" number="14">
+<h1><span class="header-section-number">14</span> Integrated Validation
 Workflow</h1>
 <p>The full validation workflow is sequential and cumulative — each
 layer builds on the prior one.</p>
@@ -2800,11 +3065,11 @@ labeling</td>
 </table>
 <hr />
 </div>
-<div id="reporting-standards" class="section level1" number="14">
-<h1><span class="header-section-number">14</span> Reporting
+<div id="reporting-standards" class="section level1" number="15">
+<h1><span class="header-section-number">15</span> Reporting
 Standards</h1>
-<div id="methods-section" class="section level2" number="14.1">
-<h2><span class="header-section-number">14.1</span> Methods Section</h2>
+<div id="methods-section" class="section level2" number="15.1">
+<h2><span class="header-section-number">15.1</span> Methods Section</h2>
 <ul>
 <li>Pre-specified construct validity predictions (external variables to
 be tested, expected direction)</li>
@@ -2821,8 +3086,8 @@ citation</li>
 <li>Replication strategy, if employed</li>
 </ul>
 </div>
-<div id="results-section" class="section level2" number="14.2">
-<h2><span class="header-section-number">14.2</span> Results Section</h2>
+<div id="results-section" class="section level2" number="15.2">
+<h2><span class="header-section-number">15.2</span> Results Section</h2>
 <ul>
 <li>Fit table for all models in sequence: LL, AIC, BIC, SABIC, <span class="math inline">\(G^2\)</span>, df, npar, entropy</li>
 <li>Model selection rationale (which criteria prioritized and why)</li>
@@ -2840,8 +3105,8 @@ p-values, reference class stated</li>
 pair (if applicable)</li>
 </ul>
 </div>
-<div id="discussion" class="section level2" number="14.3">
-<h2><span class="header-section-number">14.3</span> Discussion</h2>
+<div id="discussion" class="section level2" number="15.3">
+<h2><span class="header-section-number">15.3</span> Discussion</h2>
 <ul>
 <li>Explanation of any validation failures (not just successes)</li>
 <li>Sensitivity analyses summarized</li>
@@ -2852,8 +3117,8 @@ post-validation)</li>
 partial invariance, moderate replication MAD)</li>
 </ul>
 </div>
-<div id="responses-to-common-reviewer-challenges" class="section level2" number="14.4">
-<h2><span class="header-section-number">14.4</span> Responses to Common
+<div id="responses-to-common-reviewer-challenges" class="section level2" number="15.4">
+<h2><span class="header-section-number">15.4</span> Responses to Common
 Reviewer Challenges</h2>
 <table>
 <colgroup>
@@ -2909,8 +3174,8 @@ power analysis if conducted</td>
 <hr />
 </div>
 </div>
-<div id="conclusion" class="section level1" number="15">
-<h1><span class="header-section-number">15</span> Conclusion</h1>
+<div id="conclusion" class="section level1" number="16">
+<h1><span class="header-section-number">16</span> Conclusion</h1>
 <p>Construct validation in latent variable research is a multi-stage,
 evidence-accumulating process that spans pre-model specification
 (theoretical grounding), model evaluation (classification quality,
@@ -2925,8 +3190,8 @@ failures as well as successes, constitutes what the field recognizes as
 academically defensible construct validation.</p>
 <hr />
 </div>
-<div id="key-references" class="section level1" number="16">
-<h1><span class="header-section-number">16</span> Key References</h1>
+<div id="key-references" class="section level1" number="17">
+<h1><span class="header-section-number">17</span> Key References</h1>
 <ul>
 <li>Bonikowski, B., &amp; DiMaggio, P. (2016). Varieties of American
 popular nationalism. <em>American Sociological Review</em>,
